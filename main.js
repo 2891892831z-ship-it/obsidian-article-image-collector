@@ -45,45 +45,60 @@ class Preview extends Modal {
       this.rows=this.plugin.articleRows(this.text,this.file,this.overrides);
       this.plan=await Promise.all(this.rows.map(row=>this.plugin.inspect(row,this.file,this.text)));this.onOpen();
     };
-    el.createEl('p',{text:'图片文件夹与文章同级，命名为“（图件）完整文章名”；保留原图片，保存快照，成功后更新引用。'});
     const pending=this.rows.filter((row,i)=>this.plan[i].action!=='skip');
-    el.createEl('p',{text:`识别 ${this.rows.length} 处图片引用：待处理 ${pending.length} 张，已归集 ${this.rows.length-pending.length} 张将直接跳过。`});
-    el.createEl('p',{text:'保存为“图号_论文图题”，新图添加 {#fig:时间戳} 标签，已有标签保持不变。'});
-    el.createEl('p',{text:`目标文件夹：${this.plugin.folder(this.file)}`});
+    const attention=this.rows.filter((row,i)=>this.plan[i].action!=='skip'||row.needsCaptionReview);
+    if(this.onlyPending===undefined)this.onlyPending=attention.length>0;
+    const counts=el.createEl('p',{text:`共 ${this.rows.length} 张 · 待处理 ${pending.length} 张 · 已归集 ${this.rows.length-pending.length} 张`});
+    counts.style.cssText='margin:10px 0;font-size:0.9em;color:var(--text-muted)';
+    const help=el.createEl('details');help.style.cssText='font-size:0.85em;color:var(--text-muted);margin-bottom:10px';
+    help.createEl('summary',{text:'保存位置与命名规则'});
+    help.createEl('p',{text:`与文章同级：${this.plugin.folder(this.file)}`});
+    help.createEl('p',{text:'文件名为“图号_图题”，不加时间戳；新图添加 {#fig:时间戳} 标签，已有标签保持不变。'});
+    const filterLabel=el.createEl('label',{text:'只看待处理 / 需确认'});filterLabel.style.cssText='display:block;margin:8px 0;font-size:0.9em';
+    const filter=filterLabel.createEl('input',{type:'checkbox'});filter.checked=this.onlyPending;
+    filter.setAttribute('aria-label','只看待处理 / 需确认');
+    const cards=[];
+    const applyFilter=()=>cards.forEach(x=>x.item.style.display=this.onlyPending&&!x.attention?'none':'');
+    filter.onchange=()=>{this.onlyPending=filter.checked;applyFilter();};
     const summary=el.createEl('p'),checks=[];
     const refresh=()=>{summary.textContent=`已选 ${this.selected.size} / ${this.rows.length} 张；未勾选图片不处理。`;button.disabled=!this.selected.size;};
     el.createEl('button',{text:'全选待处理'}).onclick=()=>{checks.forEach(x=>{x.check.checked=x.plan.action!=='skip';if(x.check.checked)this.selected.add(x.row.start);else this.selected.delete(x.row.start);});refresh();};
     el.createEl('button',{text:'取消全选'}).onclick=()=>{this.selected.clear();checks.forEach(x=>x.check.checked=false);refresh();};
     const list = el.createEl('div'); list.style.maxHeight = '50vh'; list.style.overflow = 'auto';
     this.rows.forEach((row,i)=>{
-      const plan=this.plan[i],item=list.createEl('div');item.style.cssText='margin:12px 0;padding:10px;border:1px solid var(--background-modifier-border);overflow-wrap:anywhere';
+      const plan=this.plan[i],item=list.createEl('div');item.style.cssText='margin:6px 0;padding:8px 10px;border:1px solid var(--background-modifier-border);border-radius:8px;overflow-wrap:anywhere';
       const needsName=row.needsCaptionReview,needsSource=plan.action==='missing';
+      const attention=plan.action!=='skip'||needsName;cards.push({item,attention});
       if(needsName||needsSource){
         item.style.border='2px solid var(--color-orange, #d97706)';
         item.style.borderLeft='6px solid var(--color-orange, #d97706)';
         const alert=item.createEl('p',{text:needsName&&needsSource?'⚠ 建议补填图名 · 需要修复图片来源':needsSource?'⚠ 需要修复图片来源':'✎ 建议补填图名（可跳过）'});
-        alert.style.cssText='font-weight:700;color:var(--color-orange, #d97706);margin:0 0 12px';
+        alert.style.cssText='font-weight:700;color:var(--color-orange, #d97706);margin:0 0 6px;font-size:0.9em';
       }
-      const label=item.createEl('label'),check=label.createEl('input',{type:'checkbox'});
+      const body=item.createEl('details');body.open=attention;
+      const bodySummary=body.createEl('summary');bodySummary.style.cssText='cursor:pointer;line-height:1.6';
+      const label=bodySummary.createEl('label'),check=label.createEl('input',{type:'checkbox'});
+      label.onclick=event=>event.stopPropagation();
       if(!this.initialized&&plan.action!=='skip')this.selected.add(row.start);
       check.checked=this.selected.has(row.start);label.createEl('strong',{text:` ${row.filename}`});
       check.onchange=()=>{if(check.checked)this.selected.add(row.start);else this.selected.delete(row.start);refresh();};checks.push({check,row,plan});
-      item.createEl('p',{text:`MD 中原文件名：${row.originalFilename||'无法取得文件名'}（第 ${row.originalLine} 行）`});
-      item.createEl('p',{text:`MD 中原图题：${row.originalCaption||'空（原引用未填写图题）'}`});
-      const details=item.createEl('details');details.createEl('summary',{text:'查看原引用与完整路径'});
+      const badge=bodySummary.createEl('span',{text:attention?' · 待确认 / 处理':' · 已归集'});badge.style.cssText='font-size:0.8em;color:var(--text-muted);font-weight:400';
+      body.createEl('p',{text:`MD 中原文件名：${row.originalFilename||'无法取得文件名'}（第 ${row.originalLine} 行）`});
+      body.createEl('p',{text:`MD 中原图题：${row.originalCaption||'空（原引用未填写图题）'}`});
+      const details=body.createEl('details');details.createEl('summary',{text:'查看原引用与完整路径'});
       details.createEl('p',{text:row.originalSyntax});details.createEl('p',{text:`原路径：${row.src}`});
-      const display=item.createEl('p',{text:`将保存为：${plan.destination||this.plugin.folder(this.file)+'/'+row.filename+'.扩展名自动识别'}`});display.style.fontSize='0.85em';
-      item.createEl('p',{text:`${row.chapter?'第 '+row.chapter+' 章':row.numbering==='sequential'?'全文连续编号':'未识别章节'} · 图题来源：${row.captionSource} · ${plan.reason}`});
-      if(row.warning)item.createEl('p',{text:row.warning});
-      if(row.needsCaptionReview)item.createEl('p',{text:'建议输入图名，也可留空继续；相邻多图不会自动共用同一图注。'});
-      const nameLabel=item.createEl('label',{text:needsName?'↓ 在这里输入图名（可选）':'保存图名（可编辑）'});nameLabel.style.cssText='display:block;font-weight:600;margin-top:12px';
+      details.createEl('p',{text:`将保存为：${plan.destination||this.plugin.folder(this.file)+'/'+row.filename+'.扩展名自动识别'}`});
+      body.createEl('p',{text:`${row.chapter?'第 '+row.chapter+' 章':row.numbering==='sequential'?'全文连续编号':'未识别章节'} · 图题来源：${row.captionSource} · ${plan.reason}`});
+      if(row.warning)body.createEl('p',{text:row.warning});
+
+      const nameLabel=body.createEl('label',{text:needsName?'↓ 在这里输入图名（可选）':'保存图名（可编辑）'});nameLabel.style.cssText='display:block;font-weight:600;margin-top:8px;font-size:0.9em';
       if(needsName)nameLabel.style.color='var(--color-orange, #d97706)';
       const input=nameLabel.createEl('input',{type:'text',value:row.needsCaptionReview&&row.title==='未命名图片'?'':row.title,placeholder:needsName?'例如：实验室平台照片；留空也可继续':'输入新的图名'});input.style.cssText='display:block;width:100%;margin-top:6px;box-sizing:border-box';input.setAttribute('aria-label','保存图片的图名');
-      if(needsName){input.style.border='2px solid var(--color-orange, #d97706)';input.style.minHeight='42px';}
+      if(needsName){input.style.border='2px solid var(--color-orange, #d97706)';input.style.minHeight='34px';}
       input.onchange=async()=>{this.overrides[row.start]=input.value.trim();this.rows=this.plugin.articleRows(this.text,this.file,this.overrides);this.plan=await Promise.all(this.rows.map(r=>this.plugin.inspect(r,this.file,this.text)));this.onOpen();};
       if(plan.action==='missing') {
-        item.createEl('button',{text:'重新选择图片或网址'}).onclick=()=>new ReplaceImage(this.plugin,this.file,this.text,row).open();
-        if(plan.recovery)item.createEl('button',{text:plan.recovery.kind==='trash'?'从库内回收站恢复':plan.recovery.kind==='local'?'确认使用找到的库内图片':'从归集记录重新获取'}).onclick=async()=>{
+        body.createEl('button',{text:'重新选择图片或网址'}).onclick=()=>new ReplaceImage(this.plugin,this.file,this.text,row).open();
+        if(plan.recovery)body.createEl('button',{text:plan.recovery.kind==='trash'?'从库内回收站恢复':plan.recovery.kind==='local'?'确认使用找到的库内图片':'从归集记录重新获取'}).onclick=async()=>{
           try{const options={onlyStart:row.start,force:true};if(row.captionSource==='手动图名')options.captionOverrides={[row.start]:row.title};
             if(plan.recovery.path)options.data=await this.plugin.app.vault.adapter.readBinary(plan.recovery.path);else options.url=plan.recovery.url;
             if(plan.recovery.sha256&&hash(options.data)!==plan.recovery.sha256)throw new Error('回收站图片与归集记录不一致，请手动选择图片');
@@ -91,7 +106,8 @@ class Preview extends Modal {
           }catch(e){new Notice(e.message,8000);}
         };
       }
-    });this.initialized=true;
+      for(const child of body.children)if(child.tagName==='P')child.style.cssText='margin:6px 0;font-size:0.85em;color:var(--text-muted)';
+    });this.initialized=true;applyFilter();
     if(!pending.length)el.createEl('p',{text:'所有图片已归集，当前没有需要更新的图片。'});
     const button = el.createEl('button',{text:'处理勾选图片'});refresh();
     button.onclick = async () => { button.disabled = true; button.textContent = '正在处理，请稍候…'; try { const report = await this.plugin.collect(this.file,this.text,this.rows.filter(r=>this.selected.has(r.start)),{captionOverrides:this.overrides}); this.close(); new Result(this.app,report,this.plugin).open(); } catch(e) { el.createEl('p',{text:e.message}); button.textContent = '重新尝试';refresh(); } };

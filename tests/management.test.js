@@ -136,10 +136,19 @@ test('trash recovery button restores only the clicked image and preserves its fi
 
 test('preview exposes checkboxes, editable names, reasons and selected-only execution',async()=>{
   const f=fixture('![A](附件/a.png){#fig:a}\n![](附件/b.png){#fig:b}',['附件/a.png','附件/b.png']);await f.plugin.preview(f.file);const modal=f.opened[0];
-  const all=el=>[el,...el.children.flatMap(all)],els=all(modal.contentEl),checks=els.filter(e=>e.type==='checkbox');assert.equal(checks.length,2);assert(checks[0].checked);assert(checks[1].checked);
+  const all=el=>[el,...el.children.flatMap(all)],els=all(modal.contentEl),checks=els.filter(e=>e.type==='checkbox').slice(1);assert.equal(checks.length,2);assert(checks[0].checked);assert(checks[1].checked);
   assert(els.some(e=>e.type==='text'));checks[1].checked=false;checks[1].onchange();const button=els.find(e=>e.text==='处理勾选图片');await button.onclick();assert(f.bins.has('文章/（图件）稿件/图1_A.png'));assert(!f.bins.has('文章/（图件）稿件/图2_未命名图片.png'));
 });
 
 test('network failures show explicit retry guidance without changing the article',async()=>{
   const f=fixture('![A](https://example.com/a.png){#fig:a}',[],{http:true}),original=f.text();const log=await f.plugin.collect(f.file,original,core.scan(original));assert.equal(log.images[0].status,'失败');assert.match(log.images[0].reason,/网络请求失败/);assert.equal(f.text(),original);
+});
+
+test('compact preview collapses healthy images and filtering preserves selections',async()=>{
+  const f=fixture('![A](文章/（图件）稿件/图1_A.png){#fig:a}\n![B](附件/b.png){#fig:b}',['文章/（图件）稿件/图1_A.png','附件/b.png']);
+  await f.plugin.preview(f.file);const modal=f.opened[0],all=el=>[el,...el.children.flatMap(all)];
+  const els=all(modal.contentEl),filter=els.find(e=>e.type==='checkbox'),cards=els.filter(e=>e.children.some(c=>c.children.some(s=>s.children.some(l=>l.children.some(x=>x.type==='checkbox')))));
+  assert.equal(cards.length,2);assert.equal(cards[0].style.display,'none');assert.equal(cards[1].style.display,'');
+  assert.equal(cards[0].children[0].open,false);assert.equal(cards[1].children[0].open,true);
+  const selected=[...modal.selected];filter.checked=false;filter.onchange();assert.equal(cards[0].style.display,'');assert.deepEqual([...modal.selected],selected);
 });
