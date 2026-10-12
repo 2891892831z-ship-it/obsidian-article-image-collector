@@ -48,6 +48,9 @@ function captionText(line) {
 function inferCaptions(text,rows) {
   return rows.map(row=>{
     const wiki=text.slice(row.begin,row.begin+3)==='![[';
+    let decoded;try{decoded=decodeURIComponent(stripReferenceStamp(row.src));}catch{decoded=row.src;}
+    const originalFilename=decoded.split(/[\\/]/).pop().split(/[?#]/)[0];
+    row={...row,originalFilename,originalCaption:wiki?'':row.title,originalSyntax:text.slice(row.begin,row.finish),originalLine:text.slice(0,row.begin).split('\n').length};
     const meaningful=!wiki&&row.title.trim()&&!/^图\s*\d+(?:[-.]\d+)?$/.test(row.title.trim());
     if(meaningful)return {...row,captionSource:'图片图题',needsCaptionReview:false};
     const lineStart=text.lastIndexOf('\n',row.begin-1)+1;

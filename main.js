@@ -61,11 +61,15 @@ class Preview extends Modal {
       if(!this.initialized&&plan.action!=='skip')this.selected.add(row.start);
       check.checked=this.selected.has(row.start);label.createEl('strong',{text:` ${row.filename}`});
       check.onchange=()=>{if(check.checked)this.selected.add(row.start);else this.selected.delete(row.start);refresh();};checks.push({check,row,plan});
-      const display=item.createEl('p',{text:`原文件：${plan.local?.path||row.src} → ${plan.destination||this.plugin.folder(this.file)+'/'+row.filename+'.扩展名自动识别'}`});display.style.fontSize='0.85em';
+      item.createEl('p',{text:`MD 中原文件名：${row.originalFilename||'无法取得文件名'}（第 ${row.originalLine} 行）`});
+      item.createEl('p',{text:`MD 中原图题：${row.originalCaption||'空（原引用未填写图题）'}`});
+      const details=item.createEl('details');details.createEl('summary',{text:'查看原引用与完整路径'});
+      details.createEl('p',{text:row.originalSyntax});details.createEl('p',{text:`原路径：${row.src}`});
+      const display=item.createEl('p',{text:`将保存为：${plan.destination||this.plugin.folder(this.file)+'/'+row.filename+'.扩展名自动识别'}`});display.style.fontSize='0.85em';
       item.createEl('p',{text:`${row.chapter?'第 '+row.chapter+' 章':row.numbering==='sequential'?'全文连续编号':'未识别章节'} · 图题来源：${row.captionSource} · ${plan.reason}`});
       if(row.warning)item.createEl('p',{text:row.warning});
       if(row.needsCaptionReview)item.createEl('p',{text:'建议输入图名，也可留空继续；相邻多图不会自动共用同一图注。'});
-      const input=item.createEl('input',{type:'text',value:row.title});input.style.width='100%';input.setAttribute('aria-label','保存图片的图名');
+      const input=item.createEl('input',{type:'text',value:row.needsCaptionReview&&row.title==='未命名图片'?'':row.title,placeholder:'可选：输入图名；留空使用默认名称'});input.style.width='100%';input.setAttribute('aria-label','保存图片的图名');
       input.onchange=async()=>{this.overrides[row.start]=input.value.trim();this.rows=this.plugin.articleRows(this.text,this.file,this.overrides);this.plan=await Promise.all(this.rows.map(r=>this.plugin.inspect(r,this.file,this.text)));this.onOpen();};
       if(plan.action==='missing') {
         item.createEl('button',{text:'重新选择图片或网址'}).onclick=()=>new ReplaceImage(this.plugin,this.file,this.text,row).open();
@@ -177,6 +181,7 @@ module.exports = class Collector extends Plugin {
   async recovery(row,file) {
     const folder=this.folder(file);let record;
     try{const log=await this.readLog(folder);record=log.images.find(r=>candidatePaths(row.src,file.path).includes(r.destination));}catch{}
+    for(const dest of candidatePaths(row.src,file.path))if(await this.app.vault.adapter.exists(dest))return {kind:'local',path:dest};
     for(const dest of candidatePaths(row.src,file.path)){
       const path='.trash/'+dest.split('/').slice(-2).join('/');
       if(await this.app.vault.adapter.exists(path))return {kind:'trash',path,sha256:record?.sha256};
@@ -289,7 +294,7 @@ module.exports = class Collector extends Plugin {
       for(const move of renames){
         if(tos.has(move.to))throw new Error('多个图片将改为同一文件名，请确认图名');tos.add(move.to);
         if(await this.app.vault.adapter.exists(move.to)&&!froms.has(move.to))throw new Error('改名目标已存在，已停止以保护图片：'+move.to);
-        move.temp=folder+'/.rename-'+crypto.randomBytes(8).toString('hex')+'.'+move.from.split('.').pop();
+        move.temp=folder+'/归集临时-'+crypto.randomBytes(8).toString('hex')+'.'+move.from.split('.').pop();
         if(await this.app.vault.adapter.exists(move.temp))throw new Error('临时改名目标已存在，请重试');
       }
       const needsBackup=changed.length||overwrites.length||renames.length;

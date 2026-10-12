@@ -42,6 +42,12 @@ test('caption inference uses adjacent explicit captions, preserves alt text, and
   assert.equal(core.scan('![](a.png)\n普通正文')[0].title,'未命名图片');
 });
 
+test('unnamed images expose the original MD filename, empty caption, syntax and line',()=>{
+  const text='# Title\n\n![](../附件/原始%20照片.jpg){#fig:a}\n![原图题](a.png)';
+  const rows=core.scan(text);assert.equal(rows[0].originalFilename,'原始 照片.jpg');assert.equal(rows[0].originalCaption,'');assert.equal(rows[0].originalLine,3);
+  assert.equal(rows[0].originalSyntax,'![](../附件/原始%20照片.jpg)');assert.equal(rows[1].originalCaption,'原图题');
+});
+
 test('relative paths resolve against the article and never escape the vault',()=>{
   assert.deepEqual(core.candidatePaths('../附件/a%20b.png','文章/稿件.md'),['附件/a b.png']);
   assert.deepEqual(core.candidatePaths('../../outside.png','文章/稿件.md'),[]);
