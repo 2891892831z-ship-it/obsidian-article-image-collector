@@ -57,6 +57,13 @@ class Preview extends Modal {
     const list = el.createEl('div'); list.style.maxHeight = '50vh'; list.style.overflow = 'auto';
     this.rows.forEach((row,i)=>{
       const plan=this.plan[i],item=list.createEl('div');item.style.cssText='margin:12px 0;padding:10px;border:1px solid var(--background-modifier-border);overflow-wrap:anywhere';
+      const needsName=row.needsCaptionReview,needsSource=plan.action==='missing';
+      if(needsName||needsSource){
+        item.style.border='2px solid var(--color-orange, #d97706)';
+        item.style.borderLeft='6px solid var(--color-orange, #d97706)';
+        const alert=item.createEl('p',{text:needsName&&needsSource?'⚠ 建议补填图名 · 需要修复图片来源':needsSource?'⚠ 需要修复图片来源':'✎ 建议补填图名（可跳过）'});
+        alert.style.cssText='font-weight:700;color:var(--color-orange, #d97706);margin:0 0 12px';
+      }
       const label=item.createEl('label'),check=label.createEl('input',{type:'checkbox'});
       if(!this.initialized&&plan.action!=='skip')this.selected.add(row.start);
       check.checked=this.selected.has(row.start);label.createEl('strong',{text:` ${row.filename}`});
@@ -69,7 +76,10 @@ class Preview extends Modal {
       item.createEl('p',{text:`${row.chapter?'第 '+row.chapter+' 章':row.numbering==='sequential'?'全文连续编号':'未识别章节'} · 图题来源：${row.captionSource} · ${plan.reason}`});
       if(row.warning)item.createEl('p',{text:row.warning});
       if(row.needsCaptionReview)item.createEl('p',{text:'建议输入图名，也可留空继续；相邻多图不会自动共用同一图注。'});
-      const input=item.createEl('input',{type:'text',value:row.needsCaptionReview&&row.title==='未命名图片'?'':row.title,placeholder:'可选：输入图名；留空使用默认名称'});input.style.width='100%';input.setAttribute('aria-label','保存图片的图名');
+      const nameLabel=item.createEl('label',{text:needsName?'↓ 在这里输入图名（可选）':'保存图名（可编辑）'});nameLabel.style.cssText='display:block;font-weight:600;margin-top:12px';
+      if(needsName)nameLabel.style.color='var(--color-orange, #d97706)';
+      const input=nameLabel.createEl('input',{type:'text',value:row.needsCaptionReview&&row.title==='未命名图片'?'':row.title,placeholder:needsName?'例如：实验室平台照片；留空也可继续':'输入新的图名'});input.style.cssText='display:block;width:100%;margin-top:6px;box-sizing:border-box';input.setAttribute('aria-label','保存图片的图名');
+      if(needsName){input.style.border='2px solid var(--color-orange, #d97706)';input.style.minHeight='42px';}
       input.onchange=async()=>{this.overrides[row.start]=input.value.trim();this.rows=this.plugin.articleRows(this.text,this.file,this.overrides);this.plan=await Promise.all(this.rows.map(r=>this.plugin.inspect(r,this.file,this.text)));this.onOpen();};
       if(plan.action==='missing') {
         item.createEl('button',{text:'重新选择图片或网址'}).onclick=()=>new ReplaceImage(this.plugin,this.file,this.text,row).open();
