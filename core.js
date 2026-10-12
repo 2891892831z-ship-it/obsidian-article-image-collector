@@ -37,7 +37,64 @@ function scan(text) {
     }
     offset += line.length;
   }
-  return rows;
+  return inferCaptions(text,rows);
+}
+function captionText(line) {
+  const clean=line.replace(/<[^>]*>/g,'').replace(/==|\*\*|__/g,'').replace(/\{[^}]*\}/g,'').trim();
+  const match=/^(?:图\s*\d+(?:[-.－–]\d+)?|Fig(?:ure)?\.?\s*\d+(?:[-.]\d+)?)\s*[、:：.．_-]?\s+(.+)$/i.exec(clean)
+    ||/^图\s*\d+(?:[-.－–]\d+)?[、:：.．_-]?\s*([^\d\s].*)$/.exec(clean);
+  return match?match[1].trim():null;
+}
+function inferCaptions(text,rows) {
+  return rows.map(row=>{
+    const wiki=text.slice(row.begin,row.begin+3)==='![[';
+    const meaningful=!wiki&&row.title.trim()&&!/^图\s*\d+(?:[-.]\d+)?$/.test(row.title.trim());
+    if(meaningful)return {...row,captionSource:'图片图题',needsCaptionReview:false};
+    const lineStart=text.lastIndexOf('\n',row.begin-1)+1;
+    const lineEnd=text.indexOf('\n',row.finish),end=lineEnd<0?text.length:lineEnd;
+    const peers=rows.filter(r=>r.begin>=lineStart&&r.begin<=end);
+    const candidates=[];
+    for(const direction of ['after','before']) {
+      const lines=direction==='after'?text.slice(end+1).split(/\r?\n/).slice(0,4):text.slice(0,lineStart).split(/\r?\n/).reverse().slice(0,4);
+      for(const line of lines){if(!line.trim()||/^\s*\{[^}]*\}\s*$/.test(line))continue;
+        const caption=captionText(line);if(caption)candidates.push({caption,direction});break;}
+    }
+    const unique=[...new Set(candidates.map(c=>c.caption))];
+    if(unique.length===1&&peers.length===1)return {...row,title:unique[0],captionSource:candidates[0].direction==='after'?'下方图注':'上方图注',needsCaptionReview:false};
+    const fallback=wiki?row.title:'未命名图片';
+    return {...row,title:fallback,captionSource:unique.length?'相邻图注待确认':wiki?'原文件名':'缺少图题',needsCaptionReview:unique.length>0||!wiki,captionCandidates:unique};
+  });
+}
+function figureId(text,row) {
+  const suffix=/^[ \t]*(?:\r?\n[ \t]*)?\{([^}\r\n]*)\}/.exec(text.slice(row.finish));
+  return suffix?/(?:^|\s)#fig:([^\s}]+)/.exec(suffix[1])?.[1]||null:null;
+}
+function referencePath(text,row,dest) {
+  return text.slice(row.begin,row.begin+3)==='![['?dest:dest.replace(/[% ()#?\[\]<>]/g,c=>'%'+c.charCodeAt(0).toString(16).toUpperCase());
+}
+function candidatePaths(src,notePath) {
+  let decoded;try{decoded=decodeURIComponent(stripReferenceStamp(src));}catch{decoded=stripReferenceStamp(src);}
+  if(/^(?:[a-z]+:|\\\\)/i.test(decoded))return [];
+  const clean=s=>{const result=[];for(const part of s.replace(/\\/g,'/').split('/')){if(!part||part==='.')continue;if(part==='..'){if(!result.length)return null;result.pop();}else result.push(part);}return result.join('/');};
+  const parent=notePath.includes('/')?notePath.slice(0,notePath.lastIndexOf('/')):'';
+  const relative=clean(parent+'/'+decoded),root=clean(decoded);
+  return [...new Set((/^\.\.?\//.test(decoded)?[relative,root]:[root,relative]).filter(Boolean))];
+}
+function canonicalizeLinks(text,notePath,moves,after=false) {
+  const map=new Map();for(const move of moves)map.set(after?move.to:move.from,move.from);
+  const canonical=src=>{for(const p of candidatePaths(src,notePath))if(map.has(p))return map.get(p);
+    let decoded;try{decoded=decodeURIComponent(src);}catch{decoded=src;}
+    if(!decoded.includes('/')){const matches=[...map].filter(([p])=>p.split('/').pop()===decoded);if(matches.length===1)return matches[0][1];}
+    return src;};
+  // Compare only link changes caused by our moves; caption, label and prose edits still fail the concurrency check.
+  const edits=scan(text).map(row=>({...row,target:canonical(row.src)}));
+  let result=replaceSources(text,edits);
+  result=result.replace(/(?<!!)\[\[([^\]\n|]+)(\|[^\]\n]*)?\]\]/g,(_,src,alias)=>`[[${canonical(src)}${alias||''}]]`);
+  result=result.replace(/(?<!!)(\[[^\]\n]*\]\()(<[^>\n]+>|[^)\s\n]+)(\s+["'][^\n]*?["'])?(\))/g,(_,prefix,src,title,end)=>{
+    const angle=src.startsWith('<'),raw=angle?src.slice(1,-1):src,next=canonical(raw);
+    return prefix+(angle?'<'+next+'>':next)+(title||'')+end;
+  });
+  return result;
 }
 function imageType(buffer) {
   const b = new Uint8Array(buffer), ascii = (a,z) => String.fromCharCode(...b.slice(a,z));
@@ -128,7 +185,7 @@ function numberFigures(text, rows, mode='auto') {
     }
     const caption=safeName(row.title).replace(/^图\s*\d+(?:[-.－–]\d+)?[\s_、:：]+/,'').replace(/^图未分章-\d+_/,'')||'未命名图片';
     const filename=`图${number}_${caption}`;
-    return {...row,number,filename,numbering:chapterMode?'chapter':'sequential',warning};
+    return {...row,number,filename,chapter:chapterMode?chapter:null,numbering:chapterMode?'chapter':'sequential',warning};
   });
 }
 function imageAtCursor(text,offset) {
@@ -175,4 +232,4 @@ function validateMarkdownMath(text) {
   if(math)issue(mathLine,'MATH002','行间数学块未闭合');
   return issues;
 }
-module.exports = {scan, safeName, imageType, replaceSources, referenceUpdate, stamp, numberFigures, imageAtCursor, matchesImageStem, stripReferenceStamp, validateMarkdownMath};
+module.exports = {scan, safeName, imageType, replaceSources, referenceUpdate, stamp, numberFigures, imageAtCursor, matchesImageStem, stripReferenceStamp, validateMarkdownMath, figureId, referencePath, candidatePaths, canonicalizeLinks};

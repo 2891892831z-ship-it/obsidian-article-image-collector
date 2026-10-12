@@ -1,9 +1,9 @@
 {
   "id": "article-image-collector",
   "name": "文章图片归集",
-  "version": "0.6.3",
+  "version": "0.7.0",
   "minAppVersion": "1.5.0",
-  "description": "按文章归集图片，增量替换、按图题命名，并保留 Pandoc 交叉引用标签（Windows / macOS 桌面版）。",
+  "description": "按图注归集文章图片，逐张选择、增量替换、只改名与缺图恢复，保留 Pandoc 标签（Windows / macOS）。",
   "author": "Tsuki",
   "isDesktopOnly": true
 }
