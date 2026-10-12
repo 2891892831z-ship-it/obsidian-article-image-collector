@@ -54,12 +54,15 @@ class Preview extends Modal {
     help.createEl('summary',{text:'保存位置与命名规则'});
     help.createEl('p',{text:`与文章同级：${this.plugin.folder(this.file)}`});
     help.createEl('p',{text:'文件名为“图号_图题”，不加时间戳；新图添加 {#fig:时间戳} 标签，已有标签保持不变。'});
-    const filterLabel=el.createEl('label',{text:'只看待处理 / 需确认'});filterLabel.style.cssText='display:block;margin:8px 0;font-size:0.9em';
+    const filterLabel=el.createEl('label');filterLabel.style.cssText='display:inline-flex;align-items:center;gap:10px;min-height:44px;max-width:100%;box-sizing:border-box;padding:10px 16px;margin:10px 0;border:1px solid var(--background-modifier-border);border-radius:10px;font-size:15px;font-weight:600;line-height:1.4;cursor:pointer;background:var(--background-secondary)';
     const filter=filterLabel.createEl('input',{type:'checkbox'});filter.checked=this.onlyPending;
+    filter.style.cssText='width:22px;height:22px;min-width:22px;margin:0;flex-shrink:0;cursor:pointer;accent-color:var(--interactive-accent)';
+    filterLabel.createEl('span',{text:'只看待处理 / 需确认'});
     filter.setAttribute('aria-label','只看待处理 / 需确认');
     const cards=[];
     const applyFilter=()=>cards.forEach(x=>x.item.style.display=this.onlyPending&&!x.attention?'none':'');
-    filter.onchange=()=>{this.onlyPending=filter.checked;applyFilter();};
+    const paintFilter=()=>{filterLabel.style.borderColor=filter.checked?'var(--interactive-accent)':'var(--background-modifier-border)';};paintFilter();
+    filter.onchange=()=>{this.onlyPending=filter.checked;paintFilter();applyFilter();};
     const summary=el.createEl('p'),checks=[];
     const refresh=()=>{summary.textContent=`已选 ${this.selected.size} / ${this.rows.length} 张；未勾选图片不处理。`;button.disabled=!this.selected.size;};
     el.createEl('button',{text:'全选待处理'}).onclick=()=>{checks.forEach(x=>{x.check.checked=x.plan.action!=='skip';if(x.check.checked)this.selected.add(x.row.start);else this.selected.delete(x.row.start);});refresh();};
