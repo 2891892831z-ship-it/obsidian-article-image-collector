@@ -1,0 +1,12 @@
+'use strict';
+const fs = require('fs'), path = require('path');
+const out = path.join(__dirname,'dist'); fs.mkdirSync(out,{recursive:true});
+const core = fs.readFileSync(path.join(__dirname,'core.js'),'utf8');
+const source = fs.readFileSync(path.join(__dirname,'main.js'),'utf8');
+const bundle = source.replace("require('./core')",`(()=>{ const module={exports:{}};\n${core}\nreturn module.exports; })()`);
+if (bundle === source) throw new Error('未找到 core 入口');
+fs.writeFileSync(path.join(out,'main.js'),bundle);
+fs.copyFileSync(path.join(__dirname,'manifest.json'),path.join(out,'manifest.json'));
+fs.mkdirSync(path.join(out,'scripts'),{recursive:true});
+fs.copyFileSync(path.join(__dirname,'scripts','validate-markdown-math.ps1'),path.join(out,'scripts','validate-markdown-math.ps1'));
+console.log('已生成独立插件安装包：dist/main.js + manifest.json');
