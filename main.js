@@ -58,13 +58,13 @@ class Preview extends Modal {
     this.rows.forEach((row,i)=>{
       const plan=this.plan[i],item=list.createEl('div');item.style.cssText='margin:12px 0;padding:10px;border:1px solid var(--background-modifier-border);overflow-wrap:anywhere';
       const label=item.createEl('label'),check=label.createEl('input',{type:'checkbox'});
-      if(!this.initialized&&plan.action!=='skip'&&!row.needsCaptionReview)this.selected.add(row.start);
+      if(!this.initialized&&plan.action!=='skip')this.selected.add(row.start);
       check.checked=this.selected.has(row.start);label.createEl('strong',{text:` ${row.filename}`});
       check.onchange=()=>{if(check.checked)this.selected.add(row.start);else this.selected.delete(row.start);refresh();};checks.push({check,row,plan});
       const display=item.createEl('p',{text:`原文件：${plan.local?.path||row.src} → ${plan.destination||this.plugin.folder(this.file)+'/'+row.filename+'.扩展名自动识别'}`});display.style.fontSize='0.85em';
       item.createEl('p',{text:`${row.chapter?'第 '+row.chapter+' 章':row.numbering==='sequential'?'全文连续编号':'未识别章节'} · 图题来源：${row.captionSource} · ${plan.reason}`});
       if(row.warning)item.createEl('p',{text:row.warning});
-      if(row.needsCaptionReview)item.createEl('p',{text:'请确认图名后勾选；相邻多图不会自动共用同一图注。'});
+      if(row.needsCaptionReview)item.createEl('p',{text:'建议输入图名，也可留空继续；相邻多图不会自动共用同一图注。'});
       const input=item.createEl('input',{type:'text',value:row.title});input.style.width='100%';input.setAttribute('aria-label','保存图片的图名');
       input.onchange=async()=>{this.overrides[row.start]=input.value.trim();this.rows=this.plugin.articleRows(this.text,this.file,this.overrides);this.plan=await Promise.all(this.rows.map(r=>this.plugin.inspect(r,this.file,this.text)));this.onOpen();};
       if(plan.action==='missing') {
@@ -138,7 +138,7 @@ module.exports = class Collector extends Plugin {
   articleRows(text,file,overrides={}) {
     const rows=scan(text).map(row=>{const key=this.captionKey(text,row,file),saved=this.settings?.captions?.[key];
       const title=overrides[row.start]!==undefined?overrides[row.start]:saved;
-      return title!==undefined?{...row,title:title||'未命名图片',captionSource:'手动图名',needsCaptionReview:false}:row;});
+      return title!==undefined?{...row,title:title||'未命名图片',...(overrides[row.start]?.trim()?{manualCaption:overrides[row.start].trim()}:{}),captionSource:'手动图名',needsCaptionReview:false}:row;});
     return numberFigures(text,rows,this.settings?.numbering||'auto');
   }
   async rememberCaptions(file,result,full,rows,report,overrides) {
@@ -151,9 +151,32 @@ module.exports = class Collector extends Plugin {
     }
     try{await this.saveData(this.settings);}catch(e){new Notice('图片已处理，但手动图名设置未保存：'+e.message,8000);}
   }
+  async readLog(folder) {
+    if(await this.app.vault.adapter.exists(folder+'/最近归集.txt')){
+      const text=await this.app.vault.adapter.read(folder+'/最近归集.txt');
+      return JSON.parse(text.split('\n--- 恢复数据 ---\n')[1]);
+    }
+    return JSON.parse(await this.app.vault.adapter.read(folder+'/最近归集.json'));
+  }
+  async saveLatest(folder,log,original) {
+    const latest={...log,backup:folder+'/归集前.txt',backupText:original};
+    const summary=['文章图片归集记录',`文章：${log.article}`,`时间：${log.time}`,...log.images.map(r=>`${r.status}：${r.source}\n  保存为：${r.destination||'无'}\n  ${r.reason||''}`)].join('\n');
+    await this.app.vault.adapter.write(latest.backup,original);
+    await this.app.vault.adapter.write(folder+'/最近归集.txt',summary+'\n--- 恢复数据 ---\n'+JSON.stringify(latest,null,2));
+    // Only remove plugin records after both current recovery files are readable.
+    if(await this.app.vault.adapter.read(latest.backup)!==original)throw new Error('最新恢复内容校验失败');
+    await this.readLog(folder);
+    const entries=await this.app.vault.adapter.list(folder);
+    for(const path of entries.files){const name=path.split('/').pop();
+      if(/^(?:归集记录-.*\.json|归集前-.*\.snapshot|最近归集\.json)$/.test(name)){
+        const file=this.app.vault.getAbstractFileByPath(path);if(file)await this.app.vault.trash(file,true);
+      }
+    }
+    log.backup=latest.backup;
+  }
   async recovery(row,file) {
     const folder=this.folder(file);let record;
-    try{const log=JSON.parse(await this.app.vault.adapter.read(folder+'/最近归集.json'));record=log.images.find(r=>candidatePaths(row.src,file.path).includes(r.destination));}catch{}
+    try{const log=await this.readLog(folder);record=log.images.find(r=>candidatePaths(row.src,file.path).includes(r.destination));}catch{}
     for(const dest of candidatePaths(row.src,file.path)){
       const path='.trash/'+dest.split('/').slice(-2).join('/');
       if(await this.app.vault.adapter.exists(path))return {kind:'trash',path,sha256:record?.sha256};
@@ -276,7 +299,7 @@ module.exports = class Collector extends Plugin {
       if (needsBackup) await this.app.vault.adapter.write(backup,original);
       const log = {article:file.path,folder,time,backup:needsBackup?backup:null,resultHash:hash(Buffer.from(result)),images:report,renames};
       await this.mkdir(folder);
-      await this.app.vault.adapter.write(`${folder}/归集记录-${id}.json`,JSON.stringify(log,null,2));
+
       const applied=[],moved=[];
       try {
         if(renames.length){
@@ -289,7 +312,7 @@ module.exports = class Collector extends Plugin {
           // Rebase selected image edits onto FileManager's link updates, keeping other links intact.
           const beforeRows=scan(original),afterRows=scan(updated),rebased=[],rebasedUsed=new Set([...updated.matchAll(/#fig:([^\s}]+)/g)].map(m=>m[1]));
           for(const edit of changed){const ordinal=beforeRows.findIndex(r=>r.start===edit.start),fresh=afterRows[ordinal];if(!fresh)throw new Error('改名后找不到图片引用');
-            const mapped=referenceUpdate(updated,fresh,edit.target||fresh.src,rebasedUsed);if(mapped)rebased.push(mapped);}
+            const mapped=referenceUpdate(updated,{...fresh,...(edit.manualCaption!==undefined?{manualCaption:edit.manualCaption}:{})},edit.target||fresh.src,rebasedUsed);if(mapped)rebased.push(mapped);}
           result=stamp(replaceSources(updated,rebased),time);await this.validate(result);
           log.resultHash=hash(Buffer.from(result));
         }
@@ -314,8 +337,7 @@ module.exports = class Collector extends Plugin {
           log.captionChanges.push({key,previous,hadPrevious:previous!==undefined,next:row.title});
         }
       }
-      if (needsBackup) await this.app.vault.adapter.write(`${folder}/最近归集.json`,JSON.stringify(log,null,2));
-      await this.app.vault.adapter.write(`${folder}/归集记录-${id}.json`,JSON.stringify(log,null,2));
+      if(needsBackup)await this.saveLatest(folder,log,original);
       await this.rememberCaptions(file,result,full,rows,report,options.captionOverrides);
       new Notice(`归集完成：更新 ${report.filter(r=>r.status==='成功').length} 张，跳过 ${report.filter(r=>r.status==='跳过').length} 张，失败 ${report.filter(r=>r.status==='失败').length} 张。`,10000);
       return log;
@@ -326,11 +348,11 @@ module.exports = class Collector extends Plugin {
     if (this.running) return new Notice('归集正在运行，请完成后再恢复');
     this.running = true;
     try {
-      const log = JSON.parse(await this.app.vault.adapter.read(`${this.folder(file)}/最近归集.json`));
+      const log = await this.readLog(this.folder(file));
       if (!log.backup) throw new Error('最近一次没有修改引用');
       const current = await this.app.vault.read(file);
       if (hash(Buffer.from(current)) !== log.resultHash) throw new Error('归集后文章已有其他修改，停止恢复以保护新增内容');
-      const restored = stamp(await this.app.vault.adapter.read(log.backup),now());
+      const restored = stamp(log.backupText??await this.app.vault.adapter.read(log.backup),now());
       await this.validate(restored);
       const reverseMoves=(log.renames||[]).map(move=>({from:move.to,to:move.from,temp:move.temp,resultStat:move.resultStat}));
       const sources=new Set(reverseMoves.map(r=>r.from));

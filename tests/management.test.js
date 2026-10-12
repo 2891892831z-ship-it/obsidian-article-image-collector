@@ -21,8 +21,9 @@ function fixture(text,paths=[],options={}) {
   const count={read:0,write:0,rename:0,save:0};let current=text;
   plugin.settings={numbering:'sequential',captions:{}};plugin.saveData=async()=>count.save++;
   const vault={read:async()=>current,readBinary:async f=>{count.read++;return bins.get(f.path);},getFiles:()=>[...bins.keys()].filter(p=>!p.startsWith('.trash/')).map(p=>new TFile(p)),
-    getAbstractFileByPath:p=>p===file.path?file:bins.has(p)?new TFile(p):null,
-    adapter:{exists:async p=>bins.has(p)||docs.has(p)||folders.has(p),read:async p=>{if(!docs.has(p))throw Error('missing');return docs.get(p);},write:async(p,t)=>docs.set(p,t),readBinary:async p=>{count.read++;return bins.get(p);}},
+    getAbstractFileByPath:p=>p===file.path?file:bins.has(p)||docs.has(p)?new TFile(p):null,
+    adapter:{list:async folder=>({files:[...docs.keys(),...bins.keys()].filter(p=>p.slice(0,p.lastIndexOf('/'))===folder),folders:[]}),exists:async p=>bins.has(p)||docs.has(p)||folders.has(p),read:async p=>{if(!docs.has(p))throw Error('missing');return docs.get(p);},write:async(p,t)=>docs.set(p,t),readBinary:async p=>{count.read++;return bins.get(p);}},
+    trash:async f=>docs.delete(f.path),
     createFolder:async p=>folders.add(p),createBinary:async(p,b)=>bins.set(p,b),modifyBinary:async(f,b)=>{count.write++;bins.set(f.path,b);},process:async(f,fn)=>{current=fn(current);}};
   plugin.app={vault,metadataCache:{getFirstLinkpathDest:()=>null},fileManager:{renameFile:async(f,dest)=>{
     if(bins.has(dest))throw Error('collision');count.rename++;const from=f.path;bins.set(dest,bins.get(from));bins.delete(from);
@@ -58,7 +59,7 @@ test('selection keeps full article numbering and persists manual names by figure
   const f=fixture('![A](附件/a.png){#fig:a}\n![B](附件/b.png){#fig:b}',['附件/a.png','附件/b.png']);
   const rows=core.scan(f.text());const log=await f.plugin.collect(f.file,f.text(),[rows[1]],{captionOverrides:{[rows[1].start]:'手动图名'}});
   assert.equal(log.images.length,1);assert(f.bins.has('文章/（图件）稿件/图2_手动图名.png'));assert(!f.bins.has('文章/（图件）稿件/图1_A.png'));
-  assert(f.text().includes('![A](附件/a.png){#fig:a}'));assert.equal(f.plugin.articleRows(f.text(),f.file)[1].title,'手动图名');
+  assert(f.text().includes('![A](附件/a.png){#fig:a}'));assert(f.text().includes('![手动图名]('));assert.equal(f.plugin.articleRows(f.text(),f.file)[1].title,'手动图名');
   const repeat=await f.plugin.collect(f.file,f.text(),[core.scan(f.text())[1]]);assert.equal(repeat.images[0].status,'跳过');
   await f.plugin.restore(f.file);assert.equal(f.plugin.settings.captions[f.file.path+'::b'],undefined);assert(f.text().includes('![B](附件/b.png)'));
 });
@@ -66,7 +67,15 @@ test('selection keeps full article numbering and persists manual names by figure
 test('manual name is remembered even when the destination already matches',async()=>{
   const dest='文章/（图件）稿件/图1_手动.png',f=fixture(`![原图题](${dest}){#fig:a}`,[dest]),row=core.scan(f.text())[0];
   const log=await f.plugin.collect(f.file,f.text(),[row],{captionOverrides:{[row.start]:'手动'}});
-  assert.equal(log.images[0].status,'跳过');assert.equal(f.plugin.articleRows(f.text(),f.file)[0].title,'手动');assert.equal(f.count.read,0);
+  assert.equal(log.images[0].status,'成功');assert(f.text().includes('![手动]('));assert.equal(f.plugin.articleRows(f.text(),f.file)[0].title,'手动');assert.equal(f.count.read,0);
+});
+
+test('latest TXT records replace old logs and restore the synchronized caption',async()=>{
+  const dest='文章/（图件）稿件/图1_A.png',f=fixture(`![A](${dest}){#fig:a}`,[dest]),folder='文章/（图件）稿件';
+  f.docs.set(folder+'/归集记录-old.json','{}');f.docs.set(folder+'/归集前-old.snapshot','old');
+  const row=core.scan(f.text())[0];await f.plugin.collect(f.file,f.text(),[row],{captionOverrides:{[row.start]:'新图名'}});
+  assert(f.docs.has(folder+'/最近归集.txt'));assert(f.docs.has(folder+'/归集前.txt'));assert(![...f.docs.keys()].some(p=>/\.json$|\.snapshot$/.test(p)));
+  assert(f.docs.get(folder+'/最近归集.txt').includes('文章图片归集记录'));await f.plugin.restore(f.file);assert(f.text().includes('![A]('));
 });
 
 test('multiple missing figure labels stay unique after a batch rename',async()=>{
@@ -121,8 +130,8 @@ test('trash recovery button restores only the clicked image and preserves its fi
 
 test('preview exposes checkboxes, editable names, reasons and selected-only execution',async()=>{
   const f=fixture('![A](附件/a.png){#fig:a}\n![](附件/b.png){#fig:b}',['附件/a.png','附件/b.png']);await f.plugin.preview(f.file);const modal=f.opened[0];
-  const all=el=>[el,...el.children.flatMap(all)],els=all(modal.contentEl),checks=els.filter(e=>e.type==='checkbox');assert.equal(checks.length,2);assert(checks[0].checked);assert(!checks[1].checked);
-  assert(els.some(e=>e.type==='text'));const button=els.find(e=>e.text==='处理勾选图片');await button.onclick();assert(f.bins.has('文章/（图件）稿件/图1_A.png'));assert(!f.bins.has('文章/（图件）稿件/图2_未命名图片.png'));
+  const all=el=>[el,...el.children.flatMap(all)],els=all(modal.contentEl),checks=els.filter(e=>e.type==='checkbox');assert.equal(checks.length,2);assert(checks[0].checked);assert(checks[1].checked);
+  assert(els.some(e=>e.type==='text'));checks[1].checked=false;checks[1].onchange();const button=els.find(e=>e.text==='处理勾选图片');await button.onclick();assert(f.bins.has('文章/（图件）稿件/图1_A.png'));assert(!f.bins.has('文章/（图件）稿件/图2_未命名图片.png'));
 });
 
 test('network failures show explicit retry guidance without changing the article',async()=>{

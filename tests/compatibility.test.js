@@ -89,7 +89,7 @@ test('24 managed images are skipped; one replacement and restore touch only that
   const documents=new Map(),folders=new Set([folder]);let reads=0,writes=0;
   plugin.app={vault:{read:async()=>text,readBinary:async f=>{reads++;return binaries.get(f.path);},
     getAbstractFileByPath:p=>binaries.has(p)?new TFile(p):null,
-    adapter:{exists:async p=>folders.has(p)||binaries.has(p)||documents.has(p),
+    adapter:{list:async()=>({files:[...documents.keys()],folders:[]}),exists:async p=>folders.has(p)||binaries.has(p)||documents.has(p),
       read:async p=>documents.get(p),write:async(p,t)=>documents.set(p,t),readBinary:async p=>{reads++;return binaries.get(p);}},
     createFolder:async p=>folders.add(p),createBinary:async(p,b)=>binaries.set(p,b),
     modifyBinary:async(f,b)=>{writes++;binaries.set(f.path,b);},process:async(f,fn)=>{text=fn(text);}},

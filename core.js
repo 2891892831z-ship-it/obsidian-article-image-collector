@@ -112,6 +112,7 @@ function imageType(buffer) {
 function replaceSources(text, rows) {
   const edits=[];
   for(const row of rows) {
+    if(row.captionTarget!==undefined)edits.push({start:row.captionStart,end:row.captionEnd,text:row.captionTarget});
     if(row.suffixTarget!==undefined)edits.push({start:row.finish,end:row.suffixEnd,text:row.suffixTarget});
     if(row.target!==undefined)edits.push({start:row.referenceTarget!==undefined?row.referenceStart:row.start,end:row.referenceTarget!==undefined?row.referenceEnd:row.end,text:row.referenceTarget??row.target});
   }
@@ -120,6 +121,11 @@ function replaceSources(text, rows) {
 }
 function referenceUpdate(text,row,destination,used,clock=new Date()) {
   const update={...row};
+  if(row.manualCaption!==undefined&&text.slice(row.begin,row.begin+3)!=='![['){
+    update.captionStart=row.begin+2;update.captionEnd=text.indexOf('](',row.begin);
+    update.captionTarget=row.manualCaption.replace(/\\/g,'\\\\').replace(/\]/g,'\\]');
+    if(text.slice(update.captionStart,update.captionEnd)===update.captionTarget)delete update.captionTarget;
+  }
   const src=stripReferenceStamp(destination||row.src);
   if(src!==row.src)update.target=src;
   const title=(row.referenceTitle||'').replace(/(?:\s*\|\s*)?v=\d{8}-\d{6}(?:-\d{3})?(?:-[a-f0-9]{6})?$/,'').trim();
@@ -136,7 +142,7 @@ function referenceUpdate(text,row,destination,used,clock=new Date()) {
     update.suffixEnd=row.finish+(suffix?suffix[0].length:0);
     update.suffixTarget=suffix?suffix[0].replace('{',`{#fig:${id} `):`{#fig:${id}}`;
   }
-  return update.target!==undefined||update.suffixTarget!==undefined?update:null;
+  return update.target!==undefined||update.suffixTarget!==undefined||update.captionTarget!==undefined?update:null;
 }
 function chapterNumber(value) {
   value=value.replace(/\s/g,'').replace(/[０-９]/g,c=>String(c.charCodeAt(0)-0xff10));
