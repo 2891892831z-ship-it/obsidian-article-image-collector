@@ -134,4 +134,25 @@ function stamp(text, time) {
   else fm += `${eol}date modified: ${time}`;
   return `---${eol}${fm}${eol}---` + text.slice(match[0].length);
 }
-module.exports = {scan, safeName, imageType, replaceSources, referenceUpdate, stamp, numberFigures, imageAtCursor, matchesImageStem, stripReferenceStamp};
+function validateMarkdownMath(text) {
+  const lines=text.split(/\r\n|\n|\r/),issues=[];
+  let fence=null,fenceLine=0,math=false,mathLine=0,closed=0;
+  const issue=(line,code,message)=>issues.push({line,code,message});
+  for(let i=0;i<lines.length;i++) {
+    const line=lines[i],n=i+1;
+    if(fence) {if(new RegExp('^ {0,3}'+fence[0]+'{'+fence.length+',}[ \\t]*$').test(line))fence=null;continue;}
+    const opening=/^ {0,3}(`{3,}|~{3,})/.exec(line);
+    if(!math&&opening){fence=opening[1];fenceLine=n;continue;}
+    if(math&&/^ {0,3}#{1,6}(?:[ \t]+|$)/.test(line))issue(n,'MATH003','标题位于未闭合的数学块中');
+    const checked=line.replace(/(`+).*?\1/g,''),delimiter=/^\s*\$\$\s*$/.test(checked);
+    if(checked.includes('$$')&&!delimiter)issue(n,'MATH001','行间 $$ 必须独占一行');
+    const label=/^\s*\{#eq:[^{}\s]+\}\s*$/.test(checked);
+    if(/\{#eq:[^}]+\}/.test(checked)&&!label)issue(n,'MATH004','公式标签必须独占一行');
+    if(label){if(!closed||closed!==n-1)issue(n,'MATH004','公式标签必须紧跟结束 $$ 行');if(i+1>=lines.length||lines[i+1].trim())issue(n,'MATH005','公式标签后必须空一行');}
+    if(delimiter){if(math){math=false;closed=n;}else{math=true;mathLine=n;closed=0;}}
+  }
+  if(fence)issue(fenceLine,'FENCE001','代码围栏未闭合');
+  if(math)issue(mathLine,'MATH002','行间数学块未闭合');
+  return issues;
+}
+module.exports = {scan, safeName, imageType, replaceSources, referenceUpdate, stamp, numberFigures, imageAtCursor, matchesImageStem, stripReferenceStamp, validateMarkdownMath};

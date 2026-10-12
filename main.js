@@ -1,13 +1,7 @@
 'use strict';
 const {Plugin, Modal, Notice, TFile, normalizePath, requestUrl} = require('obsidian');
-const {scan, safeName, imageType, replaceSources, stamp, numberFigures, imageAtCursor, matchesImageStem, stripReferenceStamp, referenceUpdate} = require('./core');
+const {scan, safeName, imageType, replaceSources, stamp, numberFigures, imageAtCursor, matchesImageStem, stripReferenceStamp, referenceUpdate, validateMarkdownMath} = require('./core');
 const crypto = require('crypto');
-const fs = require('fs');
-const path = require('path');
-const os = require('os');
-const {execFile} = require('child_process');
-const {promisify} = require('util');
-const runFile = promisify(execFile);
 function now() { const d = new Date(), p = n => String(n).padStart(2,'0'); return `${d.getFullYear()}.${p(d.getMonth()+1)}.${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`; }
 function hash(b) { return crypto.createHash('sha256').update(Buffer.from(b)).digest('hex'); }
 function versionTime() { const d=new Date(),p=n=>String(n).padStart(2,'0');return `${d.getFullYear()}${p(d.getMonth()+1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}-${String(d.getMilliseconds()).padStart(3,'0')}`; }
@@ -138,17 +132,9 @@ module.exports = class Collector extends Plugin {
     return this.collect(file,text,scan(text));
   }
   async validate(text) {
-    if (/[\u2070-\u209f]/.test(text)) throw new Error('笔记含 Unicode 假上下标，请先修正；图片已保存，正文未修改');
-    const root = this.app.vault.adapter.getBasePath();
-    const vaultScript = path.join(root,'0-辅助','scripts','validate-markdown-math.ps1');
-    const script = fs.existsSync(vaultScript) ? vaultScript : path.join(this.app.vault.adapter.getBasePath(),this.manifest.dir,'scripts','validate-markdown-math.ps1');
-    if (!fs.existsSync(script)) throw new Error('找不到数学格式校验脚本，请重新安装完整插件包，正文未修改');
-    const temp = fs.mkdtempSync(path.join(os.tmpdir(),'article-images-'));
-    try {
-      const candidate = path.join(temp,'candidate.md'); fs.writeFileSync(candidate,text,'utf8');
-      await runFile('powershell.exe',['-NoProfile','-ExecutionPolicy','Bypass','-File',script,'-InputPath',candidate],{windowsHide:true,timeout:60000});
-    } catch(e) { throw new Error(`数学格式校验未通过，正文未修改：${e.stdout || e.stderr || e.message}`); }
-    finally { fs.rmSync(temp,{recursive:true,force:true}); }
+    if (/[\u2070-\u209f]/.test(text)) throw new Error('笔记含 Unicode 假上下标，请先修正；正文未修改');
+    const issues=validateMarkdownMath(text);
+    if(issues.length)throw new Error('数学格式校验未通过，正文未修改：'+issues.map(x=>`第 ${x.line} 行 [${x.code}] ${x.message}`).join('；'));
   }
   async collect(file,original,rows,options={}) {
     if (this.running) throw new Error('已有归集任务正在运行');

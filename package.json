@@ -1,13 +1,14 @@
 {
   "name": "obsidian-article-image-collector",
-  "version": "0.6.1",
+  "version": "0.6.2",
   "private": true,
-  "description": "按文章归集图片，增量替换、按图题命名，并保留 Pandoc 交叉引用标签（Windows 桌面版）。",
+  "description": "按文章归集图片，增量替换、按图题命名，并保留 Pandoc 交叉引用标签（Windows / macOS 桌面版）。",
   "author": "Tsuki",
   "license": "MIT",
   "scripts": {
     "build": "node build.js",
-    "check": "node --check main.js && node --check core.js && node --check build.js"
+    "check": "node --check main.js && node --check core.js && node --check build.js",
+    "test": "node --test tests/compatibility.test.js"
   },
   "engines": {
     "node": ">=18"

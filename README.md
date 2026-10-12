@@ -1,9 +1,9 @@
 ---
-date modified: 2026.10.12 10:12:07
+date modified: 2026.10.12 10:16:49
 ---
 # 文章图片归集 · Article Image Collector
 
-作者：**Tsuki**。适用于 Obsidian 的 Windows 桌面插件，将一篇文章引用的网络图片和库内图片集中保存到文章旁边，按图号和图题命名。
+作者：**Tsuki**。适用于 Obsidian 的 Windows / macOS 桌面插件，将一篇文章引用的网络图片和库内图片集中保存到文章旁边，按图号和图题命名。
 
 ## 功能
 
@@ -21,10 +21,12 @@ date modified: 2026.10.12 10:12:07
 
 1. 从本仓库 Releases 下载 `article-image-collector.zip`。
 2. 在目标库中创建 `.obsidian/plugins/article-image-collector/`。
-3. 将压缩包中的 `main.js`、`manifest.json` 和整个 `scripts/` 文件夹放入该目录。
+3. 将压缩包中的 `main.js`、`manifest.json` 放入该目录。
 4. 重新加载 Obsidian，在“设置 → 第三方插件”中启用“文章图片归集”。
 
-需要 Windows、Obsidian 1.5.0 或以上和 Windows PowerShell。插件包含数学格式校验脚本，不需要额外下载库模板。仅声明支持 Windows 桌面，不支持移动端。
+支持 Windows 和 macOS 上的 Obsidian 1.5.0 或以上桌面版本，Intel / Apple Silicon Mac 共用同一个安装包。插件内置 JavaScript 数学格式校验，不需要 PowerShell、Pandoc 或额外库脚本。不支持移动端。
+
+Mac 安装时，在 Finder 中打开你的库文件夹，按 `Command + Shift + .` 显示隐藏目录，再进入 `.obsidian/plugins/`。升级时替换 `main.js` 和 `manifest.json` 并重新加载插件，保留已有的 `data.json`。
 
 ## 使用
 
@@ -56,15 +58,16 @@ Markdown 图片的方括号文字用作图题；Wiki 图片嵌入使用原文件
 ```sh
 npm run check
 npm run build
+npm test
 ```
 
-`dist/` 包含可安装的 `main.js`、`manifest.json` 和 `scripts/`。根目录的 `main.js` 是源码入口，需要与 `core.js` 一起构建；安装时使用 `dist/main.js`。
+`dist/` 包含可安装的 `main.js` 和 `manifest.json`。根目录的 `main.js` 是源码入口，需要与 `core.js` 一起构建；安装时使用 `dist/main.js`。
 
 ## GitHub 发布
 
 将本项目目录作为独立仓库上传，保留 `.github/workflows/release.yml`。首次上传可通过 GitHub 网页创建仓库并上传项目文件，或添加自己的远程仓库后用 Git 推送。
 
-创建与 `manifest.json` 版本号一致的 Git 标签（例如 `0.6.1`）并推送。GitHub Actions 会校验版本、构建并生成 Release，附带完整安装包。发布流程需要仓库允许 GitHub Actions。
+创建与 `manifest.json` 版本号一致的 Git 标签（例如 `0.6.2`）并推送。GitHub Actions 会校验版本、构建并生成 Release，附带完整安装包。发布流程需要仓库允许 GitHub Actions。构建与自动测试在 Windows 和 macOS runner 上执行；这些测试不替代 Obsidian 的界面实机检查。
 
 本项目不包含个人笔记、图片、操作日志、插件设置或本机安装脚本。
 

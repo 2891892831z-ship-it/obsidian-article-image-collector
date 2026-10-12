@@ -8,7 +8,10 @@ permissions:
   contents: read
 jobs:
   build:
-    runs-on: windows-latest
+    strategy:
+      matrix:
+        os: [windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -16,6 +19,7 @@ jobs:
           node-version: '20'
       - run: npm run check
       - run: npm run build
+      - run: npm test
       - name: Verify release version
         if: startsWith(github.ref, 'refs/tags/')
         shell: pwsh
@@ -23,9 +27,11 @@ jobs:
           $manifest = Get-Content manifest.json -Raw | ConvertFrom-Json
           if ($env:GITHUB_REF_NAME -ne $manifest.version) { throw 'Tag must match manifest version exactly' }
       - name: Package plugin
+        if: runner.os == 'Windows'
         shell: pwsh
-        run: Compress-Archive -Path dist/main.js,dist/manifest.json,dist/scripts -DestinationPath article-image-collector.zip
+        run: Compress-Archive -Path dist/main.js,dist/manifest.json -DestinationPath article-image-collector.zip
       - uses: actions/upload-artifact@v4
+        if: runner.os == 'Windows'
         with:
           name: article-image-collector
           path: article-image-collector.zip
