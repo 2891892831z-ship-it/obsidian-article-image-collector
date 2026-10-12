@@ -1,5 +1,5 @@
 ---
-date modified: 2026.10.12 10:16:49
+date modified: 2026.10.12 10:22:15
 ---
 # 文章图片归集 · Article Image Collector
 
@@ -17,7 +17,13 @@ date modified: 2026.10.12 10:16:49
 
 ## 安装
 
-目前提供手动安装，尚未提交 Obsidian 社区插件商店。
+支持 BRAT 和手动安装，尚未提交 Obsidian 社区插件商店。
+
+### 使用 BRAT 安装（Windows / Mac）
+
+在 BRAT 设置中选择“添加 Beta 插件”，输入 `2891892831z-ship-it/obsidian-article-image-collector`，选择最新版本并添加。公开仓库不需要 GitHub 令牌。Release 提供独立的 `manifest.json` 和构建后的 `main.js`，BRAT 会自动下载安装。
+
+### 手动安装
 
 1. 从本仓库 Releases 下载 `article-image-collector.zip`。
 2. 在目标库中创建 `.obsidian/plugins/article-image-collector/`。
