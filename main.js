@@ -1,6 +1,7 @@
 'use strict';
-const {Plugin, Modal, Notice, TFile, normalizePath, requestUrl} = require('obsidian');
+const {Plugin, Modal, Notice, TFile, normalizePath, requestUrl, getLanguage, PluginSettingTab} = require('obsidian');
 const {scan, safeName, imageType, replaceSources, stamp, numberFigures, imageAtCursor, matchesImageStem, stripReferenceStamp, referenceUpdate, validateMarkdownMath, figureId, referencePath, candidatePaths, canonicalizeLinks} = require('./core');
+const {translate,resolveLanguage}=require('./i18n');
 const crypto = require('crypto');
 function now() { const d = new Date(), p = n => String(n).padStart(2,'0'); return `${d.getFullYear()}.${p(d.getMonth()+1)}.${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`; }
 function hash(b) { return crypto.createHash('sha256').update(Buffer.from(b)).digest('hex'); }
@@ -8,14 +9,15 @@ function versionTime() { const d=new Date(),p=n=>String(n).padStart(2,'0');retur
 class ReplaceImage extends Modal {
   constructor(plugin,file,original,row) {super(plugin.app);Object.assign(this,{plugin,file,original,row});}
   onOpen() {
+    const t=(message,...args)=>this.plugin.t(message,...args);
     this.modalEl.style.width='min(700px,90vw)';this.modalEl.style.minWidth='0';
-    const el=this.contentEl;el.createEl('h2',{text:'替换当前图片'});
-    el.createEl('p',{text:`${this.row.filename}：图片文件名不加时间戳，新图使用 {#fig:时间戳} 标签，换图保留已有标签。替换同名图片，旧内容保存到历史版本，保留图题、标签和宽度。`});
-    el.createEl('p',{text:'选择电脑上的新图片，或填写新图片网址。'});
+    const el=this.contentEl;el.createEl('h2',{text:t('替换当前图片')});
+    el.createEl('p',{text:t('{0}：图片文件名不加时间戳，新图使用 {#fig:时间戳} 标签，换图保留已有标签。替换同名图片，旧内容保存到历史版本，保留图题、标签和宽度。',this.row.filename)});
+    el.createEl('p',{text:t('选择电脑上的新图片，或填写新图片网址。')});
     const local=el.createEl('input',{type:'file'});local.accept='.png,.jpg,.jpeg,.svg,.gif,.webp,.bmp,.avif,.tif,.tiff';
     const url=el.createEl('input',{type:'url',placeholder:'https://…'});url.style.width='100%';
     const status=el.createEl('p');
-    const button=el.createEl('button',{text:'保存新版本并替换引用'});
+    const button=el.createEl('button',{text:t('保存新版本并替换引用')});
     button.onclick=async()=>{
       button.disabled=true;
       try {
@@ -27,7 +29,7 @@ class ReplaceImage extends Modal {
         const log=await this.plugin.collect(this.file,this.original,scan(this.original),options);
         if(log.images.some(x=>x.status==='失败'))throw new Error(log.images.find(x=>x.status==='失败').reason);
         this.close();new Result(this.app,log,this.plugin).open();
-      }catch(e){status.textContent=e.message;button.disabled=false;}
+      }catch(e){status.textContent=t(e.message);button.disabled=false;}
     };
   }
   onClose(){this.contentEl.empty();}
@@ -35,10 +37,11 @@ class ReplaceImage extends Modal {
 class Preview extends Modal {
   constructor(plugin,file,text,rows,plan) { super(plugin.app); Object.assign(this,{plugin,file,text,rows,plan});this.selected=new Set();this.overrides={}; }
   onOpen() {
+    const t=(message,...args)=>this.plugin.t(message,...args);
     this.modalEl.style.width='min(800px, 90vw)'; this.modalEl.style.minWidth='0';
-    const el = this.contentEl; el.empty(); el.createEl('h2',{text:'归集当前文章图片'});
-    const label=el.createEl('label',{text:'文件名图号：'}),select=label.createEl('select');
-    for(const [value,text]of [['auto','自动（按文章 chapters 属性）'],['chapter','按章节：图2-1_图名'],['sequential','全文连续：图1_图名']])select.createEl('option',{value,text});
+    const el = this.contentEl; el.empty(); this.plugin.languageControl(el,()=>this.onOpen()); el.createEl('h2',{text:t('归集当前文章图片')});
+    const label=el.createEl('label',{text:t('文件名图号：')}),select=label.createEl('select');
+    for(const [value,text]of [['auto','自动（按文章 chapters 属性）'],['chapter','按章节：图2-1_图名'],['sequential','全文连续：图1_图名']])select.createEl('option',{value,text:t(text)});
     select.value=this.plugin.settings?.numbering||'auto';
     select.onchange=async()=>{
       this.plugin.settings.numbering=select.value;await this.plugin.saveData(this.plugin.settings);
@@ -48,25 +51,25 @@ class Preview extends Modal {
     const pending=this.rows.filter((row,i)=>this.plan[i].action!=='skip');
     const attention=this.rows.filter((row,i)=>this.plan[i].action!=='skip'||row.needsCaptionReview);
     if(this.onlyPending===undefined)this.onlyPending=attention.length>0;
-    const counts=el.createEl('p',{text:`共 ${this.rows.length} 张 · 待处理 ${pending.length} 张 · 已归集 ${this.rows.length-pending.length} 张`});
+    const counts=el.createEl('p',{text:t('共 {0} 张 · 待处理 {1} 张 · 已归集 {2} 张',this.rows.length,pending.length,this.rows.length-pending.length)});
     counts.style.cssText='margin:10px 0;font-size:0.9em;color:var(--text-muted)';
     const help=el.createEl('details');help.style.cssText='font-size:0.85em;color:var(--text-muted);margin-bottom:10px';
-    help.createEl('summary',{text:'保存位置与命名规则'});
-    help.createEl('p',{text:`与文章同级：${this.plugin.folder(this.file)}`});
-    help.createEl('p',{text:'文件名为“图号_图题”，不加时间戳；新图添加 {#fig:时间戳} 标签，已有标签保持不变。'});
+    help.createEl('summary',{text:t('保存位置与命名规则')});
+    help.createEl('p',{text:t('与文章同级：{0}',this.plugin.folder(this.file))});
+    help.createEl('p',{text:t('文件名为“图号_图题”，不加时间戳；新图添加 {#fig:时间戳} 标签，已有标签保持不变。')});
     const filterLabel=el.createEl('label');filterLabel.style.cssText='display:inline-flex;align-items:center;gap:10px;min-height:44px;max-width:100%;box-sizing:border-box;padding:10px 16px;margin:10px 0;border:1px solid var(--background-modifier-border);border-radius:10px;font-size:15px;font-weight:600;line-height:1.4;cursor:pointer;background:var(--background-secondary)';
     const filter=filterLabel.createEl('input',{type:'checkbox'});filter.checked=this.onlyPending;
     filter.style.cssText='width:22px;height:22px;min-width:22px;margin:0;flex-shrink:0;cursor:pointer;accent-color:var(--interactive-accent)';
-    filterLabel.createEl('span',{text:'只看待处理 / 需确认'});
-    filter.setAttribute('aria-label','只看待处理 / 需确认');
+    filterLabel.createEl('span',{text:t('只看待处理 / 需确认')});
+    filter.setAttribute('aria-label',t('只看待处理 / 需确认'));
     const cards=[];
     const applyFilter=()=>cards.forEach(x=>x.item.style.display=this.onlyPending&&!x.attention?'none':'');
     const paintFilter=()=>{filterLabel.style.borderColor=filter.checked?'var(--interactive-accent)':'var(--background-modifier-border)';};paintFilter();
     filter.onchange=()=>{this.onlyPending=filter.checked;paintFilter();applyFilter();};
     const summary=el.createEl('p'),checks=[];
-    const refresh=()=>{summary.textContent=`已选 ${this.selected.size} / ${this.rows.length} 张；未勾选图片不处理。`;button.disabled=!this.selected.size;};
-    el.createEl('button',{text:'全选待处理'}).onclick=()=>{checks.forEach(x=>{x.check.checked=x.plan.action!=='skip';if(x.check.checked)this.selected.add(x.row.start);else this.selected.delete(x.row.start);});refresh();};
-    el.createEl('button',{text:'取消全选'}).onclick=()=>{this.selected.clear();checks.forEach(x=>x.check.checked=false);refresh();};
+    const refresh=()=>{summary.textContent=t('已选 {0} / {1} 张；未勾选图片不处理。',this.selected.size,this.rows.length);button.disabled=!this.selected.size;};
+    el.createEl('button',{text:t('全选待处理')}).onclick=()=>{checks.forEach(x=>{x.check.checked=x.plan.action!=='skip';if(x.check.checked)this.selected.add(x.row.start);else this.selected.delete(x.row.start);});refresh();};
+    el.createEl('button',{text:t('取消全选')}).onclick=()=>{this.selected.clear();checks.forEach(x=>x.check.checked=false);refresh();};
     const list = el.createEl('div'); list.style.maxHeight = '50vh'; list.style.overflow = 'auto';
     this.rows.forEach((row,i)=>{
       const plan=this.plan[i],item=list.createEl('div');item.style.cssText='margin:6px 0;padding:8px 10px;border:1px solid var(--background-modifier-border);border-radius:8px;overflow-wrap:anywhere';
@@ -75,7 +78,7 @@ class Preview extends Modal {
       if(needsName||needsSource){
         item.style.border='2px solid var(--color-orange, #d97706)';
         item.style.borderLeft='6px solid var(--color-orange, #d97706)';
-        const alert=item.createEl('p',{text:needsName&&needsSource?'⚠ 建议补填图名 · 需要修复图片来源':needsSource?'⚠ 需要修复图片来源':'✎ 建议补填图名（可跳过）'});
+        const alert=item.createEl('p',{text:t(needsName&&needsSource?'⚠ 建议补填图名 · 需要修复图片来源':needsSource?'⚠ 需要修复图片来源':'✎ 建议补填图名（可跳过）')});
         alert.style.cssText='font-weight:700;color:var(--color-orange, #d97706);margin:0 0 6px;font-size:0.9em';
       }
       const body=item.createEl('details');body.open=attention;
@@ -85,63 +88,82 @@ class Preview extends Modal {
       if(!this.initialized&&plan.action!=='skip')this.selected.add(row.start);
       check.checked=this.selected.has(row.start);label.createEl('strong',{text:` ${row.filename}`});
       check.onchange=()=>{if(check.checked)this.selected.add(row.start);else this.selected.delete(row.start);refresh();};checks.push({check,row,plan});
-      const badge=bodySummary.createEl('span',{text:attention?' · 待确认 / 处理':' · 已归集'});badge.style.cssText='font-size:0.8em;color:var(--text-muted);font-weight:400';
-      body.createEl('p',{text:`MD 中原文件名：${row.originalFilename||'无法取得文件名'}（第 ${row.originalLine} 行）`});
-      body.createEl('p',{text:`MD 中原图题：${row.originalCaption||'空（原引用未填写图题）'}`});
-      const details=body.createEl('details');details.createEl('summary',{text:'查看原引用与完整路径'});
-      details.createEl('p',{text:row.originalSyntax});details.createEl('p',{text:`原路径：${row.src}`});
-      details.createEl('p',{text:`将保存为：${plan.destination||this.plugin.folder(this.file)+'/'+row.filename+'.扩展名自动识别'}`});
-      body.createEl('p',{text:`${row.chapter?'第 '+row.chapter+' 章':row.numbering==='sequential'?'全文连续编号':'未识别章节'} · 图题来源：${row.captionSource} · ${plan.reason}`});
-      if(row.warning)body.createEl('p',{text:row.warning});
+      const badge=bodySummary.createEl('span',{text:t(attention?' · 待确认 / 处理':' · 已归集')});badge.style.cssText='font-size:0.8em;color:var(--text-muted);font-weight:400';
+      body.createEl('p',{text:t('MD 中原文件名：{0}（第 {1} 行）',row.originalFilename||t('无法取得文件名'),row.originalLine)});
+      body.createEl('p',{text:t('MD 中原图题：{0}',row.originalCaption||t('空（原引用未填写图题）'))});
+      const details=body.createEl('details');details.createEl('summary',{text:t('查看原引用与完整路径')});
+      details.createEl('p',{text:row.originalSyntax});details.createEl('p',{text:t('原路径：{0}',row.src)});
+      details.createEl('p',{text:t('将保存为：{0}',plan.destination||this.plugin.folder(this.file)+'/'+row.filename+'.…')});
+      body.createEl('p',{text:t('{0} · 图题来源：{1} · {2}',row.chapter?t('第 {0} 章',row.chapter):t(row.numbering==='sequential'?'全文连续编号':'未识别章节'),t(row.captionSource),t(plan.reason))});
+      if(row.warning)body.createEl('p',{text:t(row.warning)});
 
-      const nameLabel=body.createEl('label',{text:needsName?'↓ 在这里输入图名（可选）':'保存图名（可编辑）'});nameLabel.style.cssText='display:block;font-weight:600;margin-top:8px;font-size:0.9em';
+      const nameLabel=body.createEl('label',{text:t(needsName?'↓ 在这里输入图名（可选）':'保存图名（可编辑）')});nameLabel.style.cssText='display:block;font-weight:600;margin-top:8px;font-size:0.9em';
       if(needsName)nameLabel.style.color='var(--color-orange, #d97706)';
-      const input=nameLabel.createEl('input',{type:'text',value:row.needsCaptionReview&&row.title==='未命名图片'?'':row.title,placeholder:needsName?'例如：实验室平台照片；留空也可继续':'输入新的图名'});input.style.cssText='display:block;width:100%;margin-top:6px;box-sizing:border-box';input.setAttribute('aria-label','保存图片的图名');
+      const input=nameLabel.createEl('input',{type:'text',value:row.needsCaptionReview&&row.title==='未命名图片'?'':row.title,placeholder:t(needsName?'例如：实验室平台照片；留空也可继续':'输入新的图名')});input.style.cssText='display:block;width:100%;margin-top:6px;box-sizing:border-box';input.setAttribute('aria-label',t('保存图片的图名'));
       if(needsName){input.style.border='2px solid var(--color-orange, #d97706)';input.style.minHeight='34px';}
       input.onchange=async()=>{this.overrides[row.start]=input.value.trim();this.rows=this.plugin.articleRows(this.text,this.file,this.overrides);this.plan=await Promise.all(this.rows.map(r=>this.plugin.inspect(r,this.file,this.text)));this.onOpen();};
       if(plan.action==='missing') {
-        body.createEl('button',{text:'重新选择图片或网址'}).onclick=()=>new ReplaceImage(this.plugin,this.file,this.text,row).open();
-        if(plan.recovery)body.createEl('button',{text:plan.recovery.kind==='trash'?'从库内回收站恢复':plan.recovery.kind==='local'?'确认使用找到的库内图片':'从归集记录重新获取'}).onclick=async()=>{
+        body.createEl('button',{text:t('重新选择图片或网址')}).onclick=()=>new ReplaceImage(this.plugin,this.file,this.text,row).open();
+        if(plan.recovery)body.createEl('button',{text:t(plan.recovery.kind==='trash'?'从库内回收站恢复':plan.recovery.kind==='local'?'确认使用找到的库内图片':'从归集记录重新获取')}).onclick=async()=>{
           try{const options={onlyStart:row.start,force:true};if(row.captionSource==='手动图名')options.captionOverrides={[row.start]:row.title};
             if(plan.recovery.path)options.data=await this.plugin.app.vault.adapter.readBinary(plan.recovery.path);else options.url=plan.recovery.url;
             if(plan.recovery.sha256&&hash(options.data)!==plan.recovery.sha256)throw new Error('回收站图片与归集记录不一致，请手动选择图片');
             const log=await this.plugin.collect(this.file,this.text,[row],options);this.close();new Result(this.app,log,this.plugin).open();
-          }catch(e){new Notice(e.message,8000);}
+          }catch(e){new Notice(t(e.message),8000);}
         };
       }
       for(const child of body.children)if(child.tagName==='P')child.style.cssText='margin:6px 0;font-size:0.85em;color:var(--text-muted)';
     });this.initialized=true;applyFilter();
-    if(!pending.length)el.createEl('p',{text:'所有图片已归集，当前没有需要更新的图片。'});
-    const button = el.createEl('button',{text:'处理勾选图片'});refresh();
-    button.onclick = async () => { button.disabled = true; button.textContent = '正在处理，请稍候…'; try { const report = await this.plugin.collect(this.file,this.text,this.rows.filter(r=>this.selected.has(r.start)),{captionOverrides:this.overrides}); this.close(); new Result(this.app,report,this.plugin).open(); } catch(e) { el.createEl('p',{text:e.message}); button.textContent = '重新尝试';refresh(); } };
+    if(!pending.length)el.createEl('p',{text:t('所有图片已归集，当前没有需要更新的图片。')});
+    const button = el.createEl('button',{text:t('处理勾选图片')});refresh();
+    button.onclick = async () => { button.disabled = true; button.textContent = t('正在处理，请稍候…'); try { const report = await this.plugin.collect(this.file,this.text,this.rows.filter(r=>this.selected.has(r.start)),{captionOverrides:this.overrides}); this.close(); new Result(this.app,report,this.plugin).open(); } catch(e) { el.createEl('p',{text:t(e.message)}); button.textContent = t('重新尝试');refresh(); } };
   }
   onClose() { this.contentEl.empty(); }
 }
 class Result extends Modal {
   constructor(app,report,plugin) { super(app); this.report=report;this.plugin=plugin; }
   onOpen() {
+    const t=(message,...args)=>this.plugin.t(message,...args);
     this.modalEl.style.width='min(700px, 90vw)'; this.modalEl.style.minWidth='0';
-    this.contentEl.createEl('h2',{text:'图片归集结果'});
-    this.contentEl.createEl('p',{text:`更新 ${this.report.images.filter(x=>x.status==='成功').length} 张，跳过 ${this.report.images.filter(x=>x.status==='跳过').length} 张，失败 ${this.report.images.filter(x=>x.status==='失败').length} 张。`});
-    this.contentEl.createEl('p',{text:`文件夹：${this.report.folder}`});
-    for (const row of this.report.images.filter(x=>x.status==='失败')) this.contentEl.createEl('p',{text:`${row.source}：${row.reason}`});
-    if(this.plugin&&this.report.images.some(x=>x.status==='失败'))this.contentEl.createEl('button',{text:'返回预览：恢复或重新选择来源'}).onclick=()=>{this.close();this.plugin.preview(this.app.vault.getAbstractFileByPath(this.report.article));};
-    this.contentEl.createEl('p',{text:'可在命令面板运行“文章图片归集：恢复最近一次归集前的文章”。恢复前会检查文章是否已有其他修改。'});
-    this.contentEl.createEl('button',{text:'完成'}).onclick=()=>this.close();
+    this.contentEl.createEl('h2',{text:t('图片归集结果')});
+    this.contentEl.createEl('p',{text:t('更新 {0} 张，跳过 {1} 张，失败 {2} 张。',this.report.images.filter(x=>x.status==='成功').length,this.report.images.filter(x=>x.status==='跳过').length,this.report.images.filter(x=>x.status==='失败').length)});
+    this.contentEl.createEl('p',{text:t('文件夹：{0}',this.report.folder)});
+    for (const row of this.report.images.filter(x=>x.status==='失败')) this.contentEl.createEl('p',{text:`${row.source}: ${t(row.reason)}`});
+    if(this.plugin&&this.report.images.some(x=>x.status==='失败'))this.contentEl.createEl('button',{text:t('返回预览：恢复或重新选择来源')}).onclick=()=>{this.close();this.plugin.preview(this.app.vault.getAbstractFileByPath(this.report.article));};
+    this.contentEl.createEl('p',{text:t('可在命令面板运行“文章图片归集：恢复最近一次归集前的文章”。恢复前会检查文章是否已有其他修改。')});
+    this.contentEl.createEl('button',{text:t('完成')}).onclick=()=>this.close();
   }
   onClose() { this.contentEl.empty(); }
 }
+class LanguageSettings extends PluginSettingTab {
+  display() {const el=this.containerEl;el.empty();this.plugin.languageControl(el,()=>this.display());el.createEl('p',{text:this.plugin.t('只切换插件界面语言，不修改文章、图名或现有文件路径。')});}
+}
 module.exports = class Collector extends Plugin {
+  language() {
+    let host='zh';
+    try {host=typeof getLanguage==='function'?getLanguage():(globalThis.localStorage?.getItem('language')||globalThis.navigator?.language||'zh');}catch{}
+    return resolveLanguage(this.settings?.language,host);
+  }
+  t(message,...args) {return translate(message,this.language(),...args);}
+  languageControl(el,refresh) {
+    const label=el.createEl('label',{text:'语言 / Language '});label.style.cssText='display:flex;justify-content:flex-end;align-items:center;gap:8px;margin-bottom:12px;font-size:0.9em';
+    const select=label.createEl('select');select.setAttribute('aria-label','语言 / Language');
+    for(const [value,text]of [['auto',this.t('跟随 Obsidian')],['zh','简体中文'],['en','English']])select.createEl('option',{value,text});
+    select.value=this.settings?.language||'auto';
+    select.onchange=async()=>{const previous=this.settings.language||'auto';this.settings.language=select.value;try{await this.saveData(this.settings);refresh();}catch(e){this.settings.language=previous;select.value=previous;new Notice(this.t(e.message),8000);}};
+    return select;
+  }
   async onload() {
     this.running = false;
-    this.settings=Object.assign({numbering:'auto',captions:{}},await this.loadData());
-    this.addCommand({id:'collect-current-article-images',name:'归集当前文章图片',callback:() => this.preview(this.app.workspace.getActiveFile())});
-    this.addCommand({id:'restore-current-article-images',name:'恢复最近一次归集前的文章',callback:() => this.restore(this.app.workspace.getActiveFile())});
-    this.addCommand({id:'replace-current-image',name:'替换光标所在图片（保留图题和编号）',editorCallback:(editor,view)=>this.replaceAtEditor(editor,view.file)});
+    this.settings=Object.assign({numbering:'auto',captions:{},language:'auto'},await this.loadData());
+    this.addSettingTab(new LanguageSettings(this.app,this));
+    this.addCommand({id:'collect-current-article-images',name:'归集当前文章图片 / Collect article images',callback:() => this.preview(this.app.workspace.getActiveFile())});
+    this.addCommand({id:'restore-current-article-images',name:'恢复最近一次归集前的文章 / Restore article before last collection',callback:() => this.restore(this.app.workspace.getActiveFile())});
+    this.addCommand({id:'replace-current-image',name:'替换光标所在图片（保留图题和编号） / Replace image at cursor (keep caption and number)',editorCallback:(editor,view)=>this.replaceAtEditor(editor,view.file)});
     this.registerEvent(this.app.workspace.on('editor-menu',(menu,editor,view)=>{
-      if(imageAtCursor(editor.getValue(),editor.posToOffset(editor.getCursor())))menu.addItem(item=>item.setTitle('替换当前图片（保留图题和编号）').setIcon('image').onClick(()=>this.replaceAtEditor(editor,view.file)));
+      if(imageAtCursor(editor.getValue(),editor.posToOffset(editor.getCursor())))menu.addItem(item=>item.setTitle(this.t('替换当前图片（保留图题和编号）')).setIcon('image').onClick(()=>this.replaceAtEditor(editor,view.file)));
     }));
-    this.registerEvent(this.app.workspace.on('file-menu',(menu,file) => { if (file instanceof TFile && file.extension === 'md') menu.addItem(item => item.setTitle('归集当前文章图片').setIcon('image').onClick(() => this.preview(file))); }));
+    this.registerEvent(this.app.workspace.on('file-menu',(menu,file) => { if (file instanceof TFile && file.extension === 'md') menu.addItem(item => item.setTitle(this.t('归集当前文章图片')).setIcon('image').onClick(() => this.preview(file))); }));
   }
   folder(file) { return normalizePath(`${file.parent.path === '/' ? '' : file.parent.path + '/'}（图件）${file.basename}`); }
   async replaceAtEditor(editor,file) {
@@ -152,12 +174,12 @@ module.exports = class Collector extends Plugin {
       if(await this.app.vault.read(file)!==original)throw new Error('文章正在保存，请稍后重试');
       const row=this.articleRows(original,file).find(x=>x.start===raw.start);
       new ReplaceImage(this,file,original,row).open();
-    }catch(e){new Notice(e.message,8000);}
+    }catch(e){new Notice(this.t(e.message),8000);}
   }
   async preview(file) {
-    if (!file || file.extension !== 'md') return new Notice('请先打开 Markdown 文章');
+    if (!file || file.extension !== 'md') return new Notice(this.t('请先打开 Markdown 文章'));
     const text = await this.app.vault.read(file), rows = this.articleRows(text,file);
-    if (!rows.length) return new Notice('没有识别到图片引用');
+    if (!rows.length) return new Notice(this.t('没有识别到图片引用'));
     const plan=await Promise.all(rows.map(row=>this.inspect(row,file,text)));
     new Preview(this,file,text,rows,plan).open();
   }
@@ -182,7 +204,7 @@ module.exports = class Collector extends Plugin {
       const ordinal=full.findIndex(r=>r.start===row.start),resultRow=resultRows[ordinal];
       if(resultRow)this.settings.captions[this.captionKey(result,resultRow,file)]=row.title;
     }
-    try{await this.saveData(this.settings);}catch(e){new Notice('图片已处理，但手动图名设置未保存：'+e.message,8000);}
+    try{await this.saveData(this.settings);}catch(e){new Notice(this.t('图片已处理，但手动图名设置未保存：{0}',e.message),8000);}
   }
   async readLog(folder) {
     if(await this.app.vault.adapter.exists(folder+'/最近归集.txt')){
@@ -255,7 +277,7 @@ module.exports = class Collector extends Plugin {
   async validate(text) {
     if (/[\u2070-\u209f]/.test(text)) throw new Error('笔记含 Unicode 假上下标，请先修正；正文未修改');
     const issues=validateMarkdownMath(text);
-    if(issues.length)throw new Error('数学格式校验未通过，正文未修改：'+issues.map(x=>`第 ${x.line} 行 [${x.code}] ${x.message}`).join('；'));
+    if(issues.length)throw new Error('数学格式校验未通过，正文未修改：'+issues.map(x=>this.t('第 {0} 行 [{1}] {2}',x.line,x.code,this.t(x.message))).join('；'));
   }
   async collect(file,original,rows,options={}) {
     if (this.running) throw new Error('已有归集任务正在运行');
@@ -283,7 +305,7 @@ module.exports = class Collector extends Plugin {
           if(existing){const update=referenceUpdate(original,row,undefined,used);if(update)changed.push(update);report.push(update?{...existing,status:'成功',reason:'仅更新引用标签，图片未重新保存'}:existing);continue;}
           let data;const source=options.url||row.src;
           if(options.data!==undefined)data=options.data;
-          else if (/^https?:\/\//i.test(source)) {let res;try{res=await requestUrl({url:source,throw:false});}catch(e){throw new Error('网络请求失败，请检查网络或换用可访问的图片直链：'+e.message);}if (res.status < 200 || res.status >= 300) throw new Error(`下载失败 HTTP ${res.status}：${res.status===404?'图片地址不存在':res.status===401||res.status===403?'来源需要登录或拒绝下载':'请稍后重试或重新选择来源'}`); data = res.arrayBuffer; }
+          else if (/^https?:\/\//i.test(source)) {let res;try{res=await requestUrl({url:source,throw:false});}catch(e){throw new Error('网络请求失败，请检查网络或换用可访问的图片直链：'+e.message);}if (res.status < 200 || res.status >= 300) throw new Error(this.t('下载失败 HTTP {0}：{1}',res.status,this.t(res.status===404?'图片地址不存在':res.status===401||res.status===403?'来源需要登录或拒绝下载':'请稍后重试或重新选择来源'))); data = res.arrayBuffer; }
           else { const local = this.resolve(row.src,file); if (!(local instanceof TFile)) throw new Error(plan?.reason||'本地图片缺失或路径无效，请在预览中恢复或重新选择来源'); data = await this.app.vault.readBinary(local); }
           const ext = imageType(data), digest = hash(data), base = row.filename||safeName(row.title);
           await this.mkdir(folder);
@@ -314,7 +336,7 @@ module.exports = class Collector extends Plugin {
       if(!changed.length&&!overwrites.length&&report.every(row=>row.status==='跳过')) {
         const log={article:file.path,folder,time,backup:null,resultHash:hash(Buffer.from(original)),images:report};
         await this.rememberCaptions(file,original,full,rows,report,options.captionOverrides);
-        new Notice(`无需更新：${report.length} 张图片已归集，全部跳过。`,6000);
+        new Notice(this.t('无需更新：{0} 张图片已归集，全部跳过。',report.length),6000);
         return log;
       }
       // Validate the complete move plan before touching filenames. Temporary names allow swaps.
@@ -373,13 +395,13 @@ module.exports = class Collector extends Plugin {
       }
       if(needsBackup)await this.saveLatest(folder,log,original);
       await this.rememberCaptions(file,result,full,rows,report,options.captionOverrides);
-      new Notice(`归集完成：更新 ${report.filter(r=>r.status==='成功').length} 张，跳过 ${report.filter(r=>r.status==='跳过').length} 张，失败 ${report.filter(r=>r.status==='失败').length} 张。`,10000);
+      new Notice(this.t('归集完成：更新 {0} 张，跳过 {1} 张，失败 {2} 张。',report.filter(r=>r.status==='成功').length,report.filter(r=>r.status==='跳过').length,report.filter(r=>r.status==='失败').length),10000);
       return log;
     } finally { this.running = false; }
   }
   async restore(file) {
-    if (!file || file.extension !== 'md') return new Notice('请先打开文章');
-    if (this.running) return new Notice('归集正在运行，请完成后再恢复');
+    if (!file || file.extension !== 'md') return new Notice(this.t('请先打开文章'));
+    if (this.running) return new Notice(this.t('归集正在运行，请完成后再恢复'));
     this.running = true;
     try {
       const log = await this.readLog(this.folder(file));
@@ -410,10 +432,10 @@ module.exports = class Collector extends Plugin {
         if(moved.length){for(const move of moved){if(move.current!==move.temp){await this.app.fileManager.renameFile(this.app.vault.getAbstractFileByPath(move.current),move.temp);move.current=move.temp;}}for(const move of moved.reverse())await this.app.fileManager.renameFile(this.app.vault.getAbstractFileByPath(move.current),move.from);}throw e;}
       if(log.captionChanges?.length&&this.saveData){
         for(const change of log.captionChanges)if(this.settings?.captions?.[change.key]===change.next){if(change.hadPrevious)this.settings.captions[change.key]=change.previous;else delete this.settings.captions[change.key];}
-        try{await this.saveData(this.settings);}catch(e){new Notice('文章已恢复，但图名设置未保存：'+e.message,8000);}
+        try{await this.saveData(this.settings);}catch(e){new Notice(this.t('文章已恢复，但图名设置未保存：{0}',e.message),8000);}
       }
-      new Notice('已恢复归集前的引用和改名；新复制的图片仍保留');
-    } catch(e) { new Notice(e.message,10000); }
+      new Notice(this.t('已恢复归集前的引用和改名；新复制的图片仍保留'));
+    } catch(e) { new Notice(this.t(e.message),10000); }
     finally { this.running = false; }
   }
 };

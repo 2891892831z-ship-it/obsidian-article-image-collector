@@ -1,13 +1,13 @@
 {
   "name": "obsidian-article-image-collector",
-  "version": "0.7.5",
+  "version": "0.8.0",
   "private": true,
   "description": "按图注归集文章图片，逐张选择、增量替换、只改名与缺图恢复，保留 Pandoc 标签（Windows / macOS）。",
   "author": "Tsuki",
   "license": "MIT",
   "scripts": {
     "build": "node build.js",
-    "check": "node --check main.js && node --check core.js && node --check build.js",
+    "check": "node --check main.js && node --check core.js && node --check build.js && node --check i18n.js",
     "test": "node --test tests/compatibility.test.js tests/management.test.js"
   },
   "engines": {

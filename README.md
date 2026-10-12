@@ -1,9 +1,17 @@
 ---
-date modified: 2026.10.12 17:15:37
+date modified: 2026.10.12 17:35:34
 ---
 # 文章图片归集 · Article Image Collector
 
+**简体中文** | [English](README.en.md)
+
 作者：**Tsuki**。适用于 Obsidian 的 Windows / macOS 桌面插件，将一篇文章引用的网络图片和库内图片集中保存到文章旁边，按图号和图题命名。
+
+## 界面语言
+
+在归集预览右上角的“语言 / Language”，或“设置 → 文章图片归集”中选择“跟随 Obsidian / 简体中文 / English”。选择会保存，预览即时切换并保留勾选项和筛选状态。跟随模式在中文 Obsidian 中使用中文，其他语言使用英文。命令面板名称提供中英双语，文件菜单与界面提示按所选语言显示。
+
+语言选择只影响插件界面，不翻译文章图题、不改已有文件名、图件文件夹或恢复记录；图件目录和生成文件名继续遵循下方的命名规则。
 
 ## 功能
 
@@ -77,13 +85,13 @@ npm run build
 npm test
 ```
 
-`dist/` 包含可安装的 `main.js` 和 `manifest.json`。根目录的 `main.js` 是源码入口，需要与 `core.js` 一起构建；安装时使用 `dist/main.js`。
+`dist/` 包含可安装的 `main.js` 和 `manifest.json`。根目录的 `main.js` 是源码入口，需要与 `core.js 和 i18n.js` 一起构建；安装时使用 `dist/main.js`。
 
 ## GitHub 发布
 
 将本项目目录作为独立仓库上传，保留 `.github/workflows/release.yml`。首次上传可通过 GitHub 网页创建仓库并上传项目文件，或添加自己的远程仓库后用 Git 推送。
 
-创建与 `manifest.json` 版本号一致的 Git 标签（例如 `0.7.4`）并推送。GitHub Actions 会校验版本、构建并生成 Release，附带完整安装包和 BRAT 所需的独立文件。发布流程需要仓库允许 GitHub Actions。构建与自动测试在 Windows 和 macOS runner 上执行；这些测试不替代 Obsidian 的界面实机检查。
+创建与 `manifest.json` 版本号一致的 Git 标签（例如 `0.8.0`）并推送。GitHub Actions 会校验版本、构建并生成 Release，附带完整安装包和 BRAT 所需的独立文件。发布流程需要仓库允许 GitHub Actions。构建与自动测试在 Windows 和 macOS runner 上执行；这些测试不替代 Obsidian 的界面实机检查。
 
 本项目不包含个人笔记、图片、操作日志、插件设置或本机安装脚本。
 

@@ -15,7 +15,7 @@ function fixture(text,paths=[],options={}) {
   }
   const filename=path.resolve(__dirname,'../dist/main.js'),m=new Module(filename);m.filename=filename;m.paths=Module._nodeModulePaths(path.dirname(filename));
   const req=m.require.bind(m);
-  m.require=id=>id==='obsidian'?{Plugin:class{},Modal:class{constructor(app){this.app=app;this.modalEl=new Element('modal');this.contentEl=new Element('content');}open(){opened.push(this);this.onOpen();}close(){}},Notice:class{constructor(message){notices.push(message);}},TFile,normalizePath:s=>s,requestUrl:async()=>{if(options.http)throw Error('offline');return {status:404};}}:req(id);
+  m.require=id=>id==='obsidian'?{Plugin:class{},getLanguage:()=>options.hostLanguage||'zh',PluginSettingTab:class{},Modal:class{constructor(app){this.app=app;this.modalEl=new Element('modal');this.contentEl=new Element('content');}open(){opened.push(this);this.onOpen();}close(){}},Notice:class{constructor(message){notices.push(message);}},TFile,normalizePath:s=>s,requestUrl:async()=>{if(options.http)throw Error('offline');return {status:404};}}:req(id);
   m._compile(fs.readFileSync(filename,'utf8'),filename);
   const plugin=new m.exports(),file=new TFile('文章/稿件.md'),bins=new Map(paths.map(p=>[p,png])),docs=new Map(),folders=new Set(['文章','文章/（图件）稿件']);
   const count={read:0,write:0,rename:0,save:0};let current=text;
@@ -151,4 +151,33 @@ test('compact preview collapses healthy images and filtering preserves selection
   assert.equal(cards.length,2);assert.equal(cards[0].style.display,'none');assert.equal(cards[1].style.display,'');
   assert.equal(cards[0].children[0].open,false);assert.equal(cards[1].children[0].open,true);
   const selected=[...modal.selected];filter.checked=false;filter.onchange();assert.equal(cards[0].style.display,'');assert.deepEqual([...modal.selected],selected);
+});
+
+test('language follows Obsidian with explicit overrides and safe template arguments',()=>{
+  const {resolveLanguage,translate}=require('../i18n');
+  assert.equal(resolveLanguage('auto','zh-TW'),'zh');assert.equal(resolveLanguage('auto','en-US'),'en');assert.equal(resolveLanguage('auto','fr'),'en');assert.equal(resolveLanguage('zh','en'),'zh');assert.equal(resolveLanguage('en','zh'),'en');
+  assert.equal(translate('MD 中原图题：{0}','en','缺少图题'),'Original MD caption: 缺少图题');
+  assert.equal(translate('原路径无效；发现同名库内图片，请确认后使用：目录/中文 (a).png','en'),'Invalid original path. A matching filename was found in the vault; confirm before using: 目录/中文 (a).png');
+  assert.equal(translate('math.unknown','en'),'math.unknown');
+});
+test('switching preview language saves preference without losing selection or changing article content',async()=>{
+  const f=fixture('![缺少图题](附件/a.png){#fig:a}\n![](附件/b.png){#fig:b}',['附件/a.png','附件/b.png']);
+  const original=f.text();await f.plugin.preview(f.file);const modal=f.opened[0],all=el=>[el,...el.children.flatMap(all)];
+  let els=all(modal.contentEl);const checks=els.filter(e=>e.type==='checkbox').slice(1);checks[1].checked=false;checks[1].onchange();
+  const selected=[...modal.selected];modal.onlyPending=false;modal.overrides[12345]='用户输入';
+  let saved;f.plugin.saveData=async settings=>saved=JSON.parse(JSON.stringify(settings));
+  const language=els.find(e=>e.tag==='select');language.value='en';await language.onchange();
+  els=all(modal.contentEl);assert(els.some(e=>e.text==='Collect article images'));assert(els.some(e=>e.text==='Original MD caption: 缺少图题'));
+  assert.equal(saved.language,'en');assert.deepEqual([...modal.selected],selected);assert.equal(modal.onlyPending,false);assert.equal(modal.overrides[12345],'用户输入');assert.equal(f.text(),original);assert.equal(f.count.read,0);assert.equal(f.count.write,0);
+  assert.equal(f.plugin.folder(f.file),'文章/（图件）稿件');
+  const back=els.find(e=>e.tag==='select');back.value='zh';await back.onchange();assert(all(modal.contentEl).some(e=>e.text==='归集当前文章图片'));
+});
+test('English host gets English missing-image, replacement and result screens with stable report statuses',async()=>{
+  const f=fixture('![](附件/missing.png){#fig:a}',[],{hostLanguage:'en'});await f.plugin.preview(f.file);
+  const all=el=>[el,...el.children.flatMap(all)];let els=all(f.opened[0].contentEl);
+  assert(els.some(e=>e.text==='⚠ Caption suggested · Image source needs repair'));
+  const choose=els.find(e=>e.text==='Choose another image or URL');assert(choose);choose.onclick();
+  assert(all(f.opened[1].contentEl).some(e=>e.text==='Replace current image'));
+  const process=els.find(e=>e.text==='Process selected images');await process.onclick();
+  els=all(f.opened.at(-1).contentEl);assert(els.some(e=>e.text==='Image collection results'));assert(els.some(e=>e.text==='Updated 0, skipped 0, failed 1.'));
 });

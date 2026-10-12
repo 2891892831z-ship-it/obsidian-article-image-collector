@@ -64,7 +64,7 @@ test('desktop plugin validates without shell, PowerShell, or vault scripts',asyn
   assert(!/powershell|child_process|execFile/.test(source));
   const module=new Module(filename);module.filename=filename;module.paths=Module._nodeModulePaths(path.dirname(filename));
   const originalRequire=module.require.bind(module);
-  module.require=id=>id==='obsidian'?{Plugin:class{},Modal:class{},Notice:class{},TFile:class{},normalizePath:s=>s}:originalRequire(id);
+  module.require=id=>id==='obsidian'?{Plugin:class{},PluginSettingTab:class{},Modal:class{},Notice:class{},TFile:class{},normalizePath:s=>s}:originalRequire(id);
   module._compile(source,filename);
   const plugin=new module.exports();
   await plugin.validate('$$\nx^2\n$$\n{#eq:test}\n\n');
@@ -80,7 +80,7 @@ test('24 managed images are skipped; one replacement and restore touch only that
   const filename=path.resolve(__dirname,'../dist/main.js'),module=new Module(filename);
   module.filename=filename;module.paths=Module._nodeModulePaths(path.dirname(filename));
   const originalRequire=module.require.bind(module);
-  module.require=id=>id==='obsidian'?{Plugin:class{},Modal:class{},Notice:class{},TFile,normalizePath:s=>s}:originalRequire(id);
+  module.require=id=>id==='obsidian'?{Plugin:class{},PluginSettingTab:class{},Modal:class{},Notice:class{},TFile,normalizePath:s=>s}:originalRequire(id);
   module._compile(fs.readFileSync(filename,'utf8'),filename);
   const plugin=new module.exports(),file=new TFile('文章/测试.md'),folder=plugin.folder(file);
   const oldImage=Buffer.from([137,80,78,71,13,10,26,10]),newImage=Buffer.concat([oldImage,Buffer.from('new')]);
