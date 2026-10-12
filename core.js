@@ -81,6 +81,16 @@ function referenceUpdate(text,row,destination,used,clock=new Date()) {
   }
   return update.target!==undefined||update.suffixTarget!==undefined?update:null;
 }
+function chapterNumber(value) {
+  value=value.replace(/\s/g,'').replace(/[０-９]/g,c=>String(c.charCodeAt(0)-0xff10));
+  if(/^\d+$/.test(value))return Number(value)>0?String(Number(value)):null;
+  const digits={'零':0,'〇':0,'一':1,'二':2,'两':2,'三':3,'四':4,'五':5,'六':6,'七':7,'八':8,'九':9},units={'十':10,'百':100,'千':1000};
+  if(!/^[零〇一二两三四五六七八九十百千]+$/.test(value))return null;
+  let result=0,digit=0;
+  if(!/[十百千]/.test(value))result=Number([...value].map(c=>digits[c]).join(''));
+  else {for(const c of value){if(units[c]){result+=(digit||1)*units[c];digit=0;}else digit=digits[c];}result+=digit;}
+  return result>0?String(result):null;
+}
 function numberFigures(text, rows, mode='auto') {
   const fm=/^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/.exec(text);
   let masked=text.replace(/<!--[\s\S]*?-->|%%[\s\S]*?%%/g,s=>s.replace(/[^\r\n]/g,' '));
@@ -89,22 +99,32 @@ function numberFigures(text, rows, mode='auto') {
   for(const line of masked.split(/(?<=\n)/)) {
     const fence=/^\s{0,3}(`{3,}|~{3,})/.exec(line);
     if(fence){if(!fenced)fenced=fence[1];else if(fence[1][0]===fenced[0]&&fence[1].length>=fenced.length)fenced=null;offset+=line.length;continue;}
-    if(!fenced && /^#\s+/.test(line)) {
+    if(!fenced && /^ {0,3}#{1,6}\s+/.test(line)) {
       const cleaned=line.replace(/<[^>]*>/g,'').replace(/==|\*\*/g,'');
-      const chapter=/^#\s+第\s*(\d+)\s*章/.exec(cleaned);
-      headings.push({offset,chapter:chapter?chapter[1]:null});
+      const heading=/^ {0,3}(#{1,6})\s+(.+?)\s*$/.exec(cleaned);
+      if(heading){
+        const title=heading[2],explicit=/^第\s*([0-9０-９零〇一二两三四五六七八九十百千\s]+)\s*章/.exec(title)||/^([零〇一二两三四五六七八九十百千]+)[、.．]\s*\S/.exec(title);
+        const numeric=/^([0-9０-９]+)(?:[、.．](?![0-9０-９])|\s+)\s*\S/.exec(title);
+        headings.push({offset,level:heading[1].length,explicit:explicit?chapterNumber(explicit[1]):null,numeric:numeric?chapterNumber(numeric[1]):null});
+      }
     }
     offset+=line.length;
   }
+  const hasExplicit=headings.some(h=>h.explicit);
+  const numericLevel=Math.min(...headings.filter(h=>h.numeric).map(h=>h.level));
+  for(const h of headings)h.chapter=hasExplicit?h.explicit:(h.level===numericLevel?h.numeric:null);
   const chapterMode=mode==='chapter'||(mode==='auto'&&/^chapters:\s*true\s*$/m.test(fm?.[1]||'')&&headings.some(h=>h.chapter));
-  const counts=new Map();let index=0,heading=-1;
+  const counts=new Map();let index=0,heading=-1,chapter=null,chapterLevel=0;
   return rows.map(row=>{
-    while(heading+1<headings.length&&headings[heading+1].offset<row.start)heading++;
-    const chapter=headings[heading]?.chapter;
+    while(heading+1<headings.length&&headings[heading+1].offset<row.start){
+      const h=headings[++heading];
+      if(h.chapter){chapter=h.chapter;chapterLevel=h.level;}
+      else if(h.level<=chapterLevel&&!h.numeric){chapter=null;chapterLevel=0;}
+    }
     let number=String(++index),warning='';
     if(chapterMode) {
       if(chapter){const n=(counts.get(chapter)||0)+1;counts.set(chapter,n);number=`${chapter}-${n}`;}
-      else {number=`未分章-${index}`;warning='图片不在“第 N 章”标题下，请检查图号';}
+      else {number=`未分章-${index}`;warning='未识别到所属章节，请使用“第1章”“一、标题”或顶层“1 标题”等编号标题';}
     }
     const caption=safeName(row.title).replace(/^图\s*\d+(?:[-.－–]\d+)?[\s_、:：]+/,'').replace(/^图未分章-\d+_/,'')||'未命名图片';
     const filename=`图${number}_${caption}`;

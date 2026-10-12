@@ -6,6 +6,28 @@ const path=require('node:path');
 const Module=require('node:module');
 const core=require('../core');
 
+test('Chinese chapters, mixed heading levels and Arabic subheadings keep chapter numbering',()=>{
+  const text='# 文档标题\n# 一、背景\n![a](a.png)\n# 三、工作基础\n## 1.研究现状\n![b](b.png)\n### （1）小节\n![c](c.png)\n## 四、研究内容\n## 1.目标\n![d](d.png)\n# 十一、团队\n![e](e.png)\n# 参考文献\n![f](f.png)';
+  const rows=core.numberFigures(text,core.scan(text),'chapter');
+  assert.deepEqual(rows.map(r=>r.number),['1-1','3-1','3-2','4-1','11-1','未分章-6']);
+});
+
+test('第N章 accepts Chinese and full-width numbers and wrapper headings',()=>{
+  const text='---\nchapters: true\n---\n# 标题\n## **第十二章 内容**\n![a](a.png)\n### 子标题\n![b](b.png)\n## 第１３章 内容\n![c](c.png)';
+  assert.deepEqual(core.numberFigures(text,core.scan(text)).map(r=>r.number),['12-1','12-2','13-1']);
+});
+
+test('Arabic numbered chapter headings use the shallowest numbered level',()=>{
+  const text='# 标题\n## 1 引言\n![a](a.png)\n### 1. 小节\n![b](b.png)\n## 2、方法\n![c](c.png)\n## 3.结果\n![d](d.png)';
+  assert.deepEqual(core.numberFigures(text,core.scan(text),'chapter').map(r=>r.number),['1-1','1-2','2-1','3-1']);
+});
+
+test('chapter scanning ignores frontmatter, code and comments; sequential mode is unchanged',()=>{
+  const text='---\nchapters: true\n---\n```md\n# 第9章 示例\n```\n<!--\n# 第8章 注释\n-->\n# 一、正文\n![a](a.png)\n# 二、正文\n![b](b.png)';
+  assert.deepEqual(core.numberFigures(text,core.scan(text)).map(r=>r.number),['1-1','2-1']);
+  assert.deepEqual(core.numberFigures(text,core.scan(text),'sequential').map(r=>r.number),['1','2']);
+});
+
 test('math validation accepts LF and CRLF with labels and ignores code examples',()=>{
   const good='# Title\n\n$$\nx^2\n$$\n{#eq:one}\n\nText\n\n```markdown\n$$ inline $$\n```\n';
   assert.deepEqual(core.validateMarkdownMath(good),[]);

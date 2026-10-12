@@ -1,5 +1,5 @@
 ---
-date modified: 2026.10.12 10:22:15
+date modified: 2026.10.12 10:35:17
 ---
 # 文章图片归集 · Article Image Collector
 
@@ -44,7 +44,7 @@ Mac 安装时，在 Finder 中打开你的库文件夹，按 `Command + Shift + 
 
 Markdown 图片的方括号文字用作图题；Wiki 图片嵌入使用原文件名作为图题。没有图题时使用默认名称。文件名中的非法字符会替换，过长图题会截短。图号根据文章中图片的顺序计算，不从图标签 ID 提取。
 
-编号模式在预览窗口选择。自动模式在 frontmatter 包含 `chapters: true` 且存在 `# 第 N 章` 标题时按章节编号，其余情况全文连续编号。
+编号模式在预览窗口选择。自动模式在 frontmatter 包含 `chapters: true` 且存在可识别的编号章节时按章节编号，其余情况全文连续编号。支持“第 1 章”“第十二章”“一、研究背景”以及“1 引言”“2.方法”“3、结果”等章号；中文章号转换为数字。可识别文档标题下的章节，数字子标题不改变中文章号；纯数字章节使用最浅的编号标题层级。章节没有图片时仍保留原章号，例如第一章后直接出现第三章图片会编号为“图3-1”。
 
 `{#fig:...}` 和 `@fig:...` 用于 Pandoc-crossref 交叉引用；本插件不负责渲染或导出这些引用。
 
@@ -73,7 +73,7 @@ npm test
 
 将本项目目录作为独立仓库上传，保留 `.github/workflows/release.yml`。首次上传可通过 GitHub 网页创建仓库并上传项目文件，或添加自己的远程仓库后用 Git 推送。
 
-创建与 `manifest.json` 版本号一致的 Git 标签（例如 `0.6.2`）并推送。GitHub Actions 会校验版本、构建并生成 Release，附带完整安装包。发布流程需要仓库允许 GitHub Actions。构建与自动测试在 Windows 和 macOS runner 上执行；这些测试不替代 Obsidian 的界面实机检查。
+创建与 `manifest.json` 版本号一致的 Git 标签（例如 `0.6.3`）并推送。GitHub Actions 会校验版本、构建并生成 Release，附带完整安装包。发布流程需要仓库允许 GitHub Actions。构建与自动测试在 Windows 和 macOS runner 上执行；这些测试不替代 Obsidian 的界面实机检查。
 
 本项目不包含个人笔记、图片、操作日志、插件设置或本机安装脚本。
 
