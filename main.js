@@ -39,7 +39,10 @@ class Preview extends Modal {
   onOpen() {
     const t=(message,...args)=>this.plugin.t(message,...args);
     this.modalEl.style.width='min(800px, 90vw)'; this.modalEl.style.minWidth='0';
-    const el = this.contentEl; el.empty(); this.plugin.languageControl(el,()=>this.onOpen()); el.createEl('h2',{text:t('归集当前文章图片')});
+    const el = this.contentEl; el.empty();
+    const header=el.createEl('div');header.style.cssText='display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px 20px;margin:0 0 20px;padding-right:20px';
+    const title=header.createEl('h2',{text:t('归集当前文章图片')});title.style.cssText='margin:0;line-height:1.3;flex:1 1 240px';
+    const language=this.plugin.languageControl(header,()=>this.onOpen());language.languageLabel.style.cssText='display:flex;align-items:center;gap:8px;margin:0;font-size:0.9em;flex:0 1 auto;flex-wrap:wrap';
     const label=el.createEl('label',{text:t('文件名图号：')}),select=label.createEl('select');
     for(const [value,text]of [['auto','自动（按文章 chapters 属性）'],['chapter','按章节：图2-1_图名'],['sequential','全文连续：图1_图名']])select.createEl('option',{value,text:t(text)});
     select.value=this.plugin.settings?.numbering||'auto';
@@ -151,7 +154,7 @@ module.exports = class Collector extends Plugin {
     for(const [value,text]of [['auto',this.t('跟随 Obsidian')],['zh','简体中文'],['en','English']])select.createEl('option',{value,text});
     select.value=this.settings?.language||'auto';
     select.onchange=async()=>{const previous=this.settings.language||'auto';this.settings.language=select.value;try{await this.saveData(this.settings);refresh();}catch(e){this.settings.language=previous;select.value=previous;new Notice(this.t(e.message),8000);}};
-    return select;
+    select.languageLabel=label;return select;
   }
   async onload() {
     this.running = false;
