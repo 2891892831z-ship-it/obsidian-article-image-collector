@@ -145,6 +145,33 @@ const messages = {
   "跟随 Obsidian": "Follow Obsidian",
   "只切换插件界面语言，不修改文章、图名或现有文件路径。": "Changes the plugin interface only. Articles, captions and existing file paths are preserved."
 };
+Object.assign(messages,{
+  "图片暂时无法预览，请检查来源或图片格式。": "Image preview unavailable. Check the source or image format.",
+  "关闭预览": "Close preview",
+  "检查图片完整性": "Check image integrity",
+  "共 {0} 张 · 本地可用 {1} 张 · 缺失 {2} 张 · 可恢复 {3} 张 · 网络引用 {4} 张": "{0} total · {1} local available · {2} missing · {3} recoverable · {4} remote references",
+  "检查不会修改文章或下载网络图片；网络地址是否可用需以加载或恢复结果为准。": "Checking does not change the article or download remote images. Remote availability is determined when loaded or recovered.",
+  "缺失": "Missing",
+  "网络引用（未验证）": "Remote reference (not verified)",
+  "本地可用": "Local available",
+  "恢复这张图片": "Recover this image",
+  "恢复全部可恢复图片（{0} 张）": "Recover all available images ({0})",
+  "重新检查": "Check again",
+  "当前文章引用：{0}": "Current article reference: {0}",
+  "原图床地址：{0}": "Original remote URL: {0}",
+  "原本地来源：{0}": "Original local source: {0}",
+  "归集不会删除图床原图；来源是否可访问需另行确认。": "Collection does not delete the remote original. Its availability requires a separate check.",
+  "电脑选择的来源不由插件管理，插件不会删除原文件。": "The selected computer file is not managed by this plugin. The original is not deleted.",
+  "归集保留原本地文件；之后是否仍存在以完整性检查为准。": "Collection preserves the local original. Its continued existence requires a separate check.",
+  "没有历史来源记录；当前 MD 文件名不等于最初来源。": "No historical source record is available. The current MD filename may differ from the original source.",
+  "没有可预览的图片；请恢复或重新选择来源。": "No preview source available. Recover the image or choose a new source.",
+  "点击放大图片": "Enlarge image",
+  "恢复来源预览 · 点击放大": "Recovery source preview · Click to enlarge",
+  "点击缩略图放大": "Click thumbnail to enlarge",
+  "图片已处理，但来源记录未保存：{0}": "Images processed, but source records could not be saved: {0}"
+});
+Object.assign(messages,{"加载网络缩略图":"Load remote thumbnail","正在检查原本地来源…":"Checking original local source…","原本地文件仍存在":"Original local file still exists","原本地文件已缺失":"Original local file is missing","原本地来源状态暂时无法确认":"Original local source status is unavailable"});
+Object.assign(messages,{"电脑选择的原文件名：{0}":"Original computer filename: {0}","恢复来源与记录不一致，请手动选择图片":"The recovery source does not match the record. Choose an image manually."});
 function resolveLanguage(preference='auto',host='zh') {
   if(preference==='zh'||preference==='en')return preference;
   return /^zh(?:[-_]|$)/i.test(host||'zh')?'zh':'en';

@@ -7,7 +7,7 @@ class TFile {
 }
 const png=Buffer.from([137,80,78,71,13,10,26,10]);
 function fixture(text,paths=[],options={}) {
-  const opened=[],notices=[];
+  const opened=[],notices=[],requests=[];
   class Element {
     constructor(tag,props={}){this.tag=tag;this.children=[];this.style={};Object.assign(this,props);}
     createEl(tag,props){const el=new Element(tag,props);this.children.push(el);return el;}
@@ -15,14 +15,14 @@ function fixture(text,paths=[],options={}) {
   }
   const filename=path.resolve(__dirname,'../dist/main.js'),m=new Module(filename);m.filename=filename;m.paths=Module._nodeModulePaths(path.dirname(filename));
   const req=m.require.bind(m);
-  m.require=id=>id==='obsidian'?{Plugin:class{},getLanguage:()=>options.hostLanguage||'zh',PluginSettingTab:class{},Modal:class{constructor(app){this.app=app;this.modalEl=new Element('modal');this.contentEl=new Element('content');}open(){opened.push(this);this.onOpen();}close(){}},Notice:class{constructor(message){notices.push(message);}},TFile,normalizePath:s=>s,requestUrl:async()=>{if(options.http)throw Error('offline');return {status:404};}}:req(id);
+  m.require=id=>id==='obsidian'?{Plugin:class{},getLanguage:()=>options.hostLanguage||'zh',PluginSettingTab:class{},Modal:class{constructor(app){this.app=app;this.modalEl=new Element('modal');this.contentEl=new Element('content');}open(){opened.push(this);this.onOpen();}close(){}},Notice:class{constructor(message){notices.push(message);}},TFile,normalizePath:s=>s,requestUrl:async({url})=>{requests.push(url);if(options.http)throw Error('offline');return options.response||{status:404};}}:req(id);
   m._compile(fs.readFileSync(filename,'utf8'),filename);
   const plugin=new m.exports(),file=new TFile('文章/稿件.md'),bins=new Map(paths.map(p=>[p,png])),docs=new Map(),folders=new Set(['文章','文章/（图件）稿件']);
   const count={read:0,write:0,rename:0,save:0};let current=text;
   plugin.settings={numbering:'sequential',captions:{}};plugin.saveData=async()=>count.save++;
   const vault={read:async()=>current,readBinary:async f=>{count.read++;return bins.get(f.path);},getFiles:()=>[...bins.keys()].filter(p=>!p.startsWith('.trash/')).map(p=>new TFile(p)),
     getAbstractFileByPath:p=>p===file.path?file:bins.has(p)||docs.has(p)?new TFile(p):null,
-    adapter:{list:async folder=>({files:[...docs.keys(),...bins.keys()].filter(p=>p.slice(0,p.lastIndexOf('/'))===folder),folders:[]}),exists:async p=>bins.has(p)||docs.has(p)||folders.has(p),read:async p=>{if(!docs.has(p))throw Error('missing');return docs.get(p);},write:async(p,t)=>docs.set(p,t),readBinary:async p=>{count.read++;return bins.get(p);}},
+    adapter:{getResourcePath:p=>'app://vault/'+encodeURIComponent(p),list:async folder=>({files:[...docs.keys(),...bins.keys()].filter(p=>p.slice(0,p.lastIndexOf('/'))===folder),folders:[]}),exists:async p=>bins.has(p)||docs.has(p)||folders.has(p),read:async p=>{if(!docs.has(p))throw Error('missing');return docs.get(p);},write:async(p,t)=>docs.set(p,t),readBinary:async p=>{count.read++;return bins.get(p);}},
     trash:async f=>docs.delete(f.path),
     createFolder:async p=>folders.add(p),createBinary:async(p,b)=>bins.set(p,b),modifyBinary:async(f,b)=>{count.write++;bins.set(f.path,b);},process:async(f,fn)=>{current=fn(current);}};
   plugin.app={vault,metadataCache:{getFirstLinkpathDest:()=>null},fileManager:{renameFile:async(f,dest)=>{
@@ -31,7 +31,7 @@ function fixture(text,paths=[],options={}) {
       current=current.replaceAll('[['+from+']]','[['+dest+']]');}
     if(options.concurrent&&count.rename===2)current+='\nUser change';
   }}};
-  return {plugin,file,bins,docs,count,opened,notices,text:()=>current};
+  return {plugin,file,bins,docs,count,opened,notices,requests,text:()=>current};
 }
 
 test('caption inference uses adjacent explicit captions, preserves alt text, and asks about multiple images',()=>{
@@ -180,4 +180,46 @@ test('English host gets English missing-image, replacement and result screens wi
   assert(all(f.opened[1].contentEl).some(e=>e.text==='Replace current image'));
   const process=els.find(e=>e.text==='Process selected images');await process.onclick();
   els=all(f.opened.at(-1).contentEl);assert(els.some(e=>e.text==='Image collection results'));assert(els.some(e=>e.text==='Updated 0, skipped 0, failed 1.'));
+});
+
+test('thumbnails load only expanded local cards, expose enlargement, and recover-source labels',async()=>{
+  const f=fixture('![A](文章/（图件）稿件/图1_A.png){#fig:a}\n![B](附件/b.png){#fig:b}',['文章/（图件）稿件/图1_A.png','附件/b.png']);await f.plugin.preview(f.file);
+  const all=el=>[el,...el.children.flatMap(all)];let els=all(f.opened[0].contentEl),images=els.filter(e=>e.tag==='img');assert.equal(images.length,1);assert.equal(images[0].src,'app://vault/'+encodeURIComponent('附件/b.png'));
+  const healthy=els.find(e=>e.tag==='details'&&e.open===false&&all(e).some(x=>x.text===' · 已归集'));healthy.open=true;healthy.ontoggle();els=all(f.opened[0].contentEl);assert.equal(els.filter(e=>e.tag==='img').length,2);
+  const zoom=els.find(e=>e.tag==='button'&&e.children.some(c=>c.tag==='img'));zoom.onclick();assert(all(f.opened[1].contentEl).some(e=>e.tag==='img'));assert.equal(f.count.read,0);assert.equal(f.count.write,0);
+});
+test('remote thumbnails require a click and do not silently download during integrity checking',async()=>{
+  const f=fixture('![A](https://example.com/a.png){#fig:a}');await f.plugin.checkIntegrity(f.file);
+  const all=el=>[el,...el.children.flatMap(all)],modal=f.opened[0];assert.equal(f.requests.length,0);assert.equal(f.text(),'![A](https://example.com/a.png){#fig:a}');
+  const card=all(modal.contentEl).find(e=>e.tag==='details');card.open=true;card.ontoggle();let image=all(card).find(e=>e.tag==='img');assert(!image);
+  const load=all(card).find(e=>e.tag==='button'&&e.children.some(c=>c.text==='加载网络缩略图'));assert(load);load.onclick();image=all(card).find(e=>e.tag==='img');assert.equal(image.src,'https://example.com/a.png');
+});
+test('source ledger survives missing collection folder and recovers local originals in one batch',async()=>{
+  const f=fixture('![A](附件/a.png){#fig:a}\n![B](附件/b.png){#fig:b}',['附件/a.png','附件/b.png']);
+  const original=f.text();await f.plugin.collect(f.file,original,core.scan(original));const saved=JSON.parse(JSON.stringify(f.plugin.settings));assert.equal(saved.sources[f.file.path].length,2);
+  assert(f.bins.has('附件/a.png'));assert(f.bins.has('附件/b.png'));
+  for(const record of saved.sources[f.file.path])f.bins.delete(record.destination);f.docs.clear();f.plugin.settings=saved;
+  const current=f.text(),rows=f.plugin.articleRows(current,f.file),plans=await Promise.all(rows.map(r=>f.plugin.inspect(r,f.file,current)));
+  assert(plans.every(p=>p.action==='missing'&&p.recovery.kind==='local'));const log=await f.plugin.recoverImages(f.file,current,rows,plans);assert.equal(log.images.filter(r=>r.status==='成功').length,2);
+  assert(f.bins.has('文章/（图件）稿件/图1_A.png'));assert(f.bins.has('文章/（图件）稿件/图2_B.png'));assert.equal(f.count.write,0);assert(f.text().includes('{#fig:a}'));assert(f.text().includes('{#fig:b}'));
+});
+test('source provenance persists through no-op and rename, while undo restores previous ledger',async()=>{
+  const f=fixture('![A](附件/a.png){#fig:a}',['附件/a.png']);let current=f.text();await f.plugin.collect(f.file,current,core.scan(current));
+  current=f.text();await f.plugin.collect(f.file,current,core.scan(current));assert.equal(f.plugin.settings.sources[f.file.path][0].origin,'附件/a.png');
+  await f.plugin.collect(f.file,current,core.scan(current),{captionOverrides:{[core.scan(current)[0].start]:'New'}});assert.equal(f.plugin.settings.sources[f.file.path][0].destination,'文章/（图件）稿件/图1_New.png');
+  await f.plugin.restore(f.file);assert.equal(f.plugin.settings.sources[f.file.path][0].destination,'文章/（图件）稿件/图1_A.png');
+});
+test('recovery rejects a changed original before writing images or article',async()=>{
+  const f=fixture('![A](附件/a.png){#fig:a}',['附件/a.png']);await f.plugin.collect(f.file,f.text(),core.scan(f.text()));const record=f.plugin.settings.sources[f.file.path][0];f.bins.delete(record.destination);f.docs.clear();f.bins.set('附件/a.png',Buffer.concat([png,Buffer.from('changed')]));const before=f.text(),rows=f.plugin.articleRows(before,f.file),plan=await f.plugin.inspect(rows[0],f.file,before);
+  await assert.rejects(f.plugin.recoverImages(f.file,before,rows,[plan]),/不一致/);assert.equal(f.text(),before);assert(!f.bins.has(record.destination));
+});
+test('remote origin survives deletion of logs and recovers using the recorded URL',async()=>{
+  const f=fixture('![A](https://example.com/a.png){#fig:a}',[],{response:{status:200,arrayBuffer:png}});await f.plugin.collect(f.file,f.text(),core.scan(f.text()));const record=f.plugin.settings.sources[f.file.path][0];assert.equal(record.origin,'https://example.com/a.png');f.bins.delete(record.destination);f.docs.clear();const before=f.text(),rows=f.plugin.articleRows(before,f.file),plan=await f.plugin.inspect(rows[0],f.file,before);assert.equal(plan.recovery.url,record.origin);const log=await f.plugin.recoverImages(f.file,before,rows,[plan]);assert.equal(log.images[0].status,'成功');assert(f.bins.has(record.destination));
+});
+
+test('legacy latest records can backfill source provenance but do not invent unavailable history',async()=>{
+  const f=fixture('![A](文章/（图件）稿件/图1_A.png){#fig:a}\n![B](文章/（图件）稿件/图2_B.png){#fig:b}',['文章/（图件）稿件/图1_A.png','文章/（图件）稿件/图2_B.png']);
+  f.docs.set('文章/（图件）稿件/最近归集.json',JSON.stringify({images:[{source:'附件/original.png',destination:'文章/（图件）稿件/图1_A.png',status:'成功'}]}));
+  await f.plugin.importRecordedSources(f.file,f.text());assert.equal(f.plugin.settings.sources[f.file.path].length,1);assert.equal(f.plugin.settings.sources[f.file.path][0].origin,'附件/original.png');
+  const rows=f.plugin.articleRows(f.text(),f.file);assert(!f.plugin.sourceRecord(rows[1],f.file,f.text()));
 });

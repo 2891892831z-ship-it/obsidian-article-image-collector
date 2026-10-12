@@ -1,5 +1,5 @@
 ---
-date modified: 2026.10.12 17:35:34
+date modified: 2026.10.12 17:58:47
 ---
 # Article Image Collector
 
@@ -12,6 +12,14 @@ Author: **Tsuki**. An Obsidian desktop plugin for Windows and macOS that collect
 Choose **Follow Obsidian**, **简体中文**, or **English** from **语言 / Language** at the top right of the collection preview, or in **Settings → 文章图片归集**. The choice is saved. Switching in the preview keeps your selection, filter and committed caption edits.
 
 Automatic mode uses Chinese for Chinese Obsidian locales and English for other locales. Command names are bilingual so you can find them in either language. Context menus, previews, replacement dialogs, results and plugin notices use the selected language. Changing the language does not translate article content, captions, existing filenames, image folders or recovery records.
+
+## Image previews and integrity checks
+
+Pending or review items show thumbnails. Click a thumbnail to open a larger view. Healthy, collected images load only after their cards are expanded. A missing image with an available source displays a recovery-source preview; this does not mean the image has been restored. Remote thumbnails require an explicit click on **Load remote thumbnail**. Failed previews display a source or format message. Previews do not write image files.
+
+Expand **Original reference and full paths** to see the current reference and recorded remote or local original. Local-original existence is also checked. Collection retains local originals in other vault folders; computer-selected files are not managed by the plugin. Source records live independently in plugin settings, in data.json, so deleting the image folder does not delete those records. Keep your plugin settings; source records are not image backups. Known sources in the latest legacy log are imported. Older sources without records are marked unknown rather than guessed.
+
+Choose **Check image integrity** in the preview or command palette to see counts of available local images, missing images, recoverable images and remote references. Checking does not modify the article or request remote URLs. You may manually load a remote thumbnail after expanding its card. Recover one image, recover all available images, or choose a replacement. Recovery requires a local original, vault-trash image or accessible recorded URL. A local source whose contents differ from its recorded hash is rejected for manual review. Batch recovery keeps full-article numbering and existing figure labels.
 
 ## Features
 
