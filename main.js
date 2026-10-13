@@ -201,6 +201,7 @@ module.exports = class Collector extends Plugin {
     this.running = false;
     this.settings=Object.assign({numbering:'auto',captions:{},language:'auto',sources:{}},await this.loadData());
     this.addSettingTab(new LanguageSettings(this.app,this));
+    this.enableLongPathImages();
     this.addCommand({id:'collect-current-article-images',name:'归集当前文章图片 / Collect article images',callback:() => this.preview(this.app.workspace.getActiveFile())});
     this.addCommand({id:'restore-current-article-images',name:'恢复最近一次归集前的文章 / Restore article before last collection',callback:() => this.restore(this.app.workspace.getActiveFile())});
     this.addCommand({id:'replace-current-image',name:'替换光标所在图片（保留图题和编号） / Replace image at cursor (keep caption and number)',editorCallback:(editor,view)=>this.replaceAtEditor(editor,view.file)});
@@ -211,6 +212,45 @@ module.exports = class Collector extends Plugin {
     this.registerEvent(this.app.workspace.on('file-menu',(menu,file) => { if (file instanceof TFile && file.extension === 'md') menu.addItem(item => item.setTitle(this.t('归集当前文章图片')).setIcon('image').onClick(() => this.preview(file))); }));
   }
   folder(file) { return normalizePath(`${file.parent.path === '/' ? '' : file.parent.path + '/'}（图件）${file.basename}`); }
+  enableLongPathImages(){
+    const base=this.app.vault.adapter.getBasePath?.().replace(/\\/g,'/');
+    if(!base||!/^\w:\//.test(base)||typeof document==='undefined')return;
+    const cache=new Map(),urls=new Set(),pending=new WeakSet();let stopped=false,queued=false;
+    const resolve=image=>{
+      const src=image.getAttribute('src')||'';
+      if(src.startsWith('app://')){
+        try{const absolute=decodeURIComponent(new URL(src).pathname).replace(/^\/(?=[A-Za-z]:\/)/,'');
+          if(absolute.toLowerCase().startsWith(base.toLowerCase()+'/'))return this.app.vault.getAbstractFileByPath(absolute.slice(base.length+1));
+        }catch{}
+      }
+      if(!src)for(const leaf of this.app.workspace.getLeavesOfType('image'))if(leaf.view.contentEl.contains(image))return leaf.view.file;
+      return null;
+    };
+    const repair=async image=>{
+      if(pending.has(image))return;
+      const file=resolve(image);if(!(file instanceof TFile)||(base+'/'+file.path).length<260||!/^(png|jpe?g|gif|webp|bmp|avif|tiff?|svg)$/i.test(file.extension))return;
+      const original=image.getAttribute('src');pending.add(image);
+      try{
+        const key=file.path+'::'+(file.stat?.mtime||0)+'::'+(file.stat?.size||0);
+        if(!cache.has(key))cache.set(key,(async()=>{const data=await this.app.vault.readBinary(file),ext=imageType(data);const mime={jpg:'image/jpeg',svg:'image/svg+xml',tif:'image/tiff'}[ext]||'image/'+ext;const url=URL.createObjectURL(new Blob([data],{type:mime}));urls.add(url);return url;})());
+        const url=await cache.get(key);
+        if(!stopped&&image.isConnected&&image.getAttribute('src')===original)image.src=url;
+      }catch{}finally{pending.delete(image);}
+    };
+    const scanImages=()=>{
+      queued=false;if(stopped)return;
+      for(const image of document.querySelectorAll('img[src^="app://"],.image-container img:not([src]),.image-container img[src=""]'))repair(image);
+      // Keep URLs only while a visible image uses them; closing a tab releases decoded resources.
+      const used=new Set([...document.querySelectorAll('img[src^="blob:"]')].map(i=>i.src));
+      for(const url of urls)if(!used.has(url)){URL.revokeObjectURL(url);urls.delete(url);for(const [key,promise]of cache)promise.then(value=>{if(value===url)cache.delete(key);});}
+    };
+    const schedule=()=>{if(!queued&&!stopped){queued=true;queueMicrotask(scanImages);}};
+    const observer=new MutationObserver(schedule);observer.observe(document.body,{childList:true,subtree:true,attributes:true,attributeFilter:['src']});
+    this.registerDomEvent(document,'error',schedule,true);
+    this.registerEvent(this.app.workspace.on('layout-change',schedule));
+    this.registerEvent(this.app.vault.on('modify',file=>{for(const key of cache.keys())if(key.startsWith(file.path+'::'))cache.delete(key);for(const leaf of this.app.workspace.getLeavesOfType('image'))if(leaf.view.file===file){const image=leaf.view.contentEl.querySelector('img');if(image)image.src=this.app.vault.getResourcePath(file);}schedule();}));
+    this.register(()=>{stopped=true;observer.disconnect();for(const url of urls)URL.revokeObjectURL(url);urls.clear();cache.clear();});schedule();
+  }
   sourceRecord(row,file,text){
     const records=this.settings?.sources?.[file.path]||[],id=figureId(text,row),paths=candidatePaths(row.src,file.path);
     return records.find(r=>id&&r.figureId===id)||records.find(r=>paths.includes(r.destination));

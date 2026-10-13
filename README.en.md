@@ -1,5 +1,5 @@
 ---
-date modified: 2026.10.12 17:58:47
+date modified: 2026.10.13 14:48:36
 ---
 # Article Image Collector
 
@@ -12,6 +12,10 @@ Author: **Tsuki**. An Obsidian desktop plugin for Windows and macOS that collect
 Choose **Follow Obsidian**, **简体中文**, or **English** from **语言 / Language** at the top right of the collection preview, or in **Settings → 文章图片归集**. The choice is saved. Switching in the preview keeps your selection, filter and committed caption edits.
 
 Automatic mode uses Chinese for Chinese Obsidian locales and English for other locales. Command names are bilingual so you can find them in either language. Context menus, previews, replacement dialogs, results and plugin notices use the selected language. Changing the language does not translate article content, captions, existing filenames, image folders or recovery records.
+
+## Windows long image paths
+
+While enabled, the plugin loads vault images with full paths of 260 characters or more through in-memory URLs, preserving filenames, folders and article references. This supports image tabs, rendered article images and plugin thumbnails. Disabling the plugin restores Obsidian’s original path-loading behavior. System settings and other applications are not changed. Large images consume memory; closing the image releases its loading resources.
 
 ## Image previews and integrity checks
 
