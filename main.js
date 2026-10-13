@@ -224,8 +224,43 @@ module.exports = class Collector extends Plugin {
       if(imageAtCursor(editor.getValue(),editor.posToOffset(editor.getCursor())))menu.addItem(item=>item.setTitle(this.t('替换当前图片（保留图题和编号）')).setIcon('image').onClick(()=>this.replaceAtEditor(editor,view.file)));
     }));
     this.registerEvent(this.app.workspace.on('file-menu',(menu,file) => { if (file instanceof TFile && file.extension === 'md') menu.addItem(item => item.setTitle(this.t('归集当前文章图片')).setIcon('image').onClick(() => this.preview(file))); }));
+    this.registerEvent(this.app.vault.on('rename',(file,oldPath) => this.onArticleRenamed(file,oldPath)));
   }
   folder(file) { return normalizePath(`${file.parent.path === '/' ? '' : file.parent.path + '/'}（图件）${file.basename}`); }
+  async onArticleRenamed(file, oldPath) {
+    try {
+      if (this.running) return;
+      if (!(file instanceof TFile) || file.extension !== 'md') return;
+      const dirOf = p => (p.includes('/') ? p.slice(0, p.lastIndexOf('/')) : '');
+      const baseOf = p => p.slice(p.lastIndexOf('/') + 1).replace(/\.md$/i, '');
+      const oldFolder = normalizePath(`${dirOf(oldPath) ? dirOf(oldPath) + '/' : ''}（图件）${baseOf(oldPath)}`);
+      const newFolder = this.folder(file);
+      if (oldFolder === newFolder) return;
+      // 文章路径已变：先迁移 data.json 中的图名与来源记录键
+      let migrated = false;
+      if (this.settings && this.saveData) {
+        const s = this.settings, prefix = oldPath + '::';
+        if (s.captions) for (const key of Object.keys(s.captions)) {
+          if (key.startsWith(prefix)) { s.captions[file.path + '::' + key.slice(prefix.length)] = s.captions[key]; delete s.captions[key]; migrated = true; }
+        }
+        if (s.sources && Object.prototype.hasOwnProperty.call(s.sources, oldPath)) {
+          s.sources[file.path] = s.sources[oldPath]; delete s.sources[oldPath]; migrated = true;
+        }
+        if (migrated) await this.saveData(s);
+      }
+      if (!(await this.app.vault.adapter.exists(oldFolder))) return;
+      if (await this.app.vault.adapter.exists(newFolder)) {
+        new Notice(this.t('文章已重命名，但新图件文件夹已存在，旧文件夹保留：{0}', oldFolder), 8000);
+        return;
+      }
+      const target = this.app.vault.getAbstractFileByPath(oldFolder);
+      if (!target) return;
+      await this.app.fileManager.renameFile(target, newFolder);
+      new Notice(this.t('文章已重命名，图件文件夹已同步：{0} → {1}', oldFolder.split('/').pop(), newFolder.split('/').pop()), 6000);
+    } catch (e) {
+      new Notice(this.t('文章改名后同步图件文件夹失败：{0}', e && e.message ? e.message : e), 8000);
+    }
+  }
   enableLongPathImages(){
     const base=this.app.vault.adapter.getBasePath?.().replace(/\\/g,'/');
     if(!base||!/^\w:\//.test(base)||typeof document==='undefined')return;

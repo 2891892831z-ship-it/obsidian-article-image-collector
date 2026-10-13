@@ -181,6 +181,11 @@ Object.assign(messages,{
   "未识别为网址；尚未在库内匹配到该路径":"Not a URL; no vault image matches this path yet",
   "库内文件不是图片：{0}":"The vault file is not an image: {0}"
 });
+Object.assign(messages,{
+  "文章已重命名，图件文件夹已同步：{0} → {1}":"Article renamed; the image folder followed: {0} → {1}",
+  "文章已重命名，但新图件文件夹已存在，旧文件夹保留：{0}":"Article renamed, but the target image folder already exists. The old folder was kept: {0}",
+  "文章改名后同步图件文件夹失败：{0}":"Failed to move the image folder with the renamed article: {0}"
+});
 function resolveLanguage(preference='auto',host='zh') {
   if(preference==='zh'||preference==='en')return preference;
   return /^zh(?:[-_]|$)/i.test(host||'zh')?'zh':'en';

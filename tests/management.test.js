@@ -223,3 +223,19 @@ test('legacy latest records can backfill source provenance but do not invent una
   await f.plugin.importRecordedSources(f.file,f.text());assert.equal(f.plugin.settings.sources[f.file.path].length,1);assert.equal(f.plugin.settings.sources[f.file.path][0].origin,'附件/original.png');
   const rows=f.plugin.articleRows(f.text(),f.file);assert(!f.plugin.sourceRecord(rows[1],f.file,f.text()));
 });
+
+test('article rename follows the image folder and migrates caption/source records',async()=>{
+  const f=fixture('![A](文章/（图件）稿件/图1_A.png){#fig:a}',['文章/（图件）稿件/图1_A.png']);
+  f.plugin.settings.captions={'文章/稿件.md::a':'区域位置'};
+  f.plugin.settings.sources={'文章/稿件.md':[{figureId:'a',destination:'文章/（图件）稿件/图1_A.png',origin:'https://x/a.png'}]};
+  const renamed=new f.file.constructor('文章/新稿.md');
+  const originalGet=f.plugin.app.vault.getAbstractFileByPath.bind(f.plugin.app.vault);
+  f.plugin.app.vault.getAbstractFileByPath=p=>p==='文章/（图件）稿件'?{path:p}:originalGet(p);
+  f.plugin.app.fileManager.renameFile=async(from,dest)=>{[...f.bins.keys()].filter(p=>p.startsWith(from.path+'/')).forEach(p=>{f.bins.set(dest+'/'+p.slice(from.path.length+1),f.bins.get(p));f.bins.delete(p);});};
+  await f.plugin.onArticleRenamed(renamed,'文章/稿件.md');
+  assert(f.bins.has('文章/（图件）新稿/图1_A.png'));
+  assert(!f.bins.has('文章/（图件）稿件/图1_A.png'));
+  assert.equal(f.plugin.settings.captions['文章/新稿.md::a'],'区域位置');
+  assert.equal(f.plugin.settings.sources['文章/新稿.md'][0].figureId,'a');
+  assert(f.notices.some(n=>String(n).includes('图件文件夹已同步')));
+});
