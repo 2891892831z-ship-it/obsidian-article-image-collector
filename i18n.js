@@ -172,6 +172,15 @@ Object.assign(messages,{
 });
 Object.assign(messages,{"加载网络缩略图":"Load remote thumbnail","正在检查原本地来源…":"Checking original local source…","原本地文件仍存在":"Original local file still exists","原本地文件已缺失":"Original local file is missing","原本地来源状态暂时无法确认":"Original local source status is unavailable"});
 Object.assign(messages,{"电脑选择的原文件名：{0}":"Original computer filename: {0}","恢复来源与记录不一致，请手动选择图片":"The recovery source does not match the record. Choose an image manually."});
+Object.assign(messages,{
+  "重新选择图片（本地 / 网址 / 库内）":"Choose another image (local / URL / vault)",
+  "选择电脑上的新图片，填写图片网址，或粘贴库内图片路径（基于库的相对路径 / 绝对路径 / obsidian:// 链接均可）。":"Choose a new image from your computer, enter a URL, or paste a vault image path (vault-relative / absolute / obsidian:// link).",
+  "请选择图片、填写图片网址，或粘贴库内图片路径":"Choose an image, enter an image URL, or paste a vault image path",
+  "https://… 或库内路径，如 4-成果/…/图.png":"https://… or a vault path such as 4-成果/…/图.png",
+  "✓ 将使用库内图片：{0}":"✓ Using vault image: {0}",
+  "未识别为网址；尚未在库内匹配到该路径":"Not a URL; no vault image matches this path yet",
+  "库内文件不是图片：{0}":"The vault file is not an image: {0}"
+});
 function resolveLanguage(preference='auto',host='zh') {
   if(preference==='zh'||preference==='en')return preference;
   return /^zh(?:[-_]|$)/i.test(host||'zh')?'zh':'en';

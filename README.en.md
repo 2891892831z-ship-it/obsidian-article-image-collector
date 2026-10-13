@@ -38,6 +38,7 @@ Choose **Check image integrity** in the preview or command palette to see counts
 - Entering a nonempty manual caption synchronizes the saved filename and Markdown image caption. Caption input is optional when none is detected.
 - Rename managed images when only their numbers or captions change, without rewriting image content.
 - Missing images can be restored from vault trash, downloaded from their recorded URL, or replaced with a chosen file or URL.
+- Any image can switch sources from the preview: local file, remote URL, or an in-vault path (relative / absolute / obsidian:// link).
 - Save old image versions and the latest article recovery snapshot. Check for later edits before restoring.
 - Built-in Markdown math validation; no PowerShell, Pandoc or external vault script is required.
 
@@ -64,7 +65,7 @@ Open an article and run **Collect article images** from the command palette, or 
 
 A nonempty manual caption updates the saved filename and the caption inside Markdown image brackets, preserving figure labels and cross-references. Manual captions are remembered by article and figure label. Missing or ambiguous captions have an orange prompt; you can leave the field blank and continue.
 
-To replace one image, place the cursor in its reference and run **Replace image at cursor (keep caption and number)**, or use the editor context menu. Choose a local image or enter a direct image URL. The previous image content is kept in history.
+To replace one image, place the cursor in its reference and run **Replace image at cursor (keep caption and number)**, or use the editor context menu. You can also expand any image in the preview and choose **Choose another image (local / URL / vault)**. Sources accept a local file, a direct image URL, or a pasted vault image path (vault-relative, absolute, or an obsidian:// link; the matched vault file is shown as you type). The previous image content is kept in history.
 
 After editing captions or inserting figures, open a new preview to review renames. A destination collision stops the rename; number swaps use temporary filenames. One image referenced with different figure numbers must be separated into independent files before renaming. Obsidian link-update settings are respected; if automatic link updates are disabled, the current article's selected references are still updated, but links in other notes may need attention.
 

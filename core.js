@@ -99,6 +99,36 @@ function canonicalizeLinks(text,notePath,moves,after=false) {
   });
   return result;
 }
+function vaultReferenceCandidates(input, basePath) {
+  // 把用户粘贴的各种“库内图片引用”归一化为若干 vault 相对路径候选：
+  // 支持 基于库的相对路径 / 绝对路径(含库根剥离) / obsidian:// 链接 / file:/// 链接 / [[wikilink]] / % 编码
+  let s = String(input || '').trim();
+  if (!s || /^(?:https?:)?\/\//i.test(s)) return [];
+  if (/^obsidian:\/\//i.test(s)) {
+    try {
+      const u = new URL(s);
+      const file = u.searchParams.get('file') || u.searchParams.get('path');
+      if (!file) return [];
+      s = file;
+    } catch { return []; }
+  }
+  if (/^file:\/\//i.test(s)) {
+    try { s = decodeURIComponent(new URL(s).pathname).replace(/^\/([A-Za-z]:)/, '$1'); } catch { return []; }
+  }
+  s = s.replace(/^!?\[\[/, '').replace(/\]\]$/, '').split('|')[0].trim();
+  if (!s) return [];
+  let decoded; try { decoded = decodeURIComponent(s); } catch { decoded = s; }
+  const variants = [...new Set([s, decoded].map(v => v.replace(/\\/g, '/').replace(/^\.?\//, '')))].filter(Boolean);
+  const results = [];
+  for (const v of variants) {
+    results.push(v);
+    if (basePath) {
+      const root = basePath.replace(/\\/g, '/').replace(/\/+$/, '');
+      if (v.toLowerCase().startsWith(root.toLowerCase() + '/')) results.push(v.slice(root.length + 1));
+    }
+  }
+  return [...new Set(results.filter(Boolean))];
+}
 function imageType(buffer) {
   const b = new Uint8Array(buffer), ascii = (a,z) => String.fromCharCode(...b.slice(a,z));
   if (b.length >= 8 && b[0] === 137 && ascii(1,4) === 'PNG') return 'png';
@@ -241,4 +271,4 @@ function validateMarkdownMath(text) {
   if(math)issue(mathLine,'MATH002','行间数学块未闭合');
   return issues;
 }
-module.exports = {scan, safeName, imageType, replaceSources, referenceUpdate, stamp, numberFigures, imageAtCursor, matchesImageStem, stripReferenceStamp, validateMarkdownMath, figureId, referencePath, candidatePaths, canonicalizeLinks};
+module.exports = {scan, safeName, imageType, replaceSources, referenceUpdate, stamp, numberFigures, imageAtCursor, matchesImageStem, stripReferenceStamp, validateMarkdownMath, figureId, referencePath, candidatePaths, canonicalizeLinks, vaultReferenceCandidates};

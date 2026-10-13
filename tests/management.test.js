@@ -176,7 +176,7 @@ test('English host gets English missing-image, replacement and result screens wi
   const f=fixture('![](附件/missing.png){#fig:a}',[],{hostLanguage:'en'});await f.plugin.preview(f.file);
   const all=el=>[el,...el.children.flatMap(all)];let els=all(f.opened[0].contentEl);
   assert(els.some(e=>e.text==='⚠ Caption suggested · Image source needs repair'));
-  const choose=els.find(e=>e.text==='Choose another image or URL');assert(choose);choose.onclick();
+  const choose=els.find(e=>e.text==='Choose another image (local / URL / vault)');assert(choose);choose.onclick();
   assert(all(f.opened[1].contentEl).some(e=>e.text==='Replace current image'));
   const process=els.find(e=>e.text==='Process selected images');await process.onclick();
   els=all(f.opened.at(-1).contentEl);assert(els.some(e=>e.text==='Image collection results'));assert(els.some(e=>e.text==='Updated 0, skipped 0, failed 1.'));

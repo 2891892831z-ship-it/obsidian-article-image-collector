@@ -1,6 +1,6 @@
 'use strict';
 const {Plugin, Modal, Notice, TFile, normalizePath, requestUrl, getLanguage, PluginSettingTab} = require('obsidian');
-const {scan, safeName, imageType, replaceSources, stamp, numberFigures, imageAtCursor, matchesImageStem, stripReferenceStamp, referenceUpdate, validateMarkdownMath, figureId, referencePath, candidatePaths, canonicalizeLinks} = require('./core');
+const {scan, safeName, imageType, replaceSources, stamp, numberFigures, imageAtCursor, matchesImageStem, stripReferenceStamp, referenceUpdate, validateMarkdownMath, figureId, referencePath, candidatePaths, canonicalizeLinks, vaultReferenceCandidates} = require('./core');
 const {translate,resolveLanguage}=require('./i18n');
 const crypto = require('crypto');
 function now() { const d = new Date(), p = n => String(n).padStart(2,'0'); return `${d.getFullYear()}.${p(d.getMonth()+1)}.${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`; }
@@ -37,7 +37,7 @@ class Integrity extends Modal {
       this.plugin.thumbnail(card,row,this.file,plan,plan.action==='missing');
       if(plan.action==='missing'){
         if(plan.recovery)card.createEl('button',{text:t('恢复这张图片')}).onclick=async()=>{try{const log=await this.plugin.recoverImages(this.file,this.text,[row],[plan]);this.close();new Result(this.app,log,this.plugin).open();}catch(e){new Notice(t(e.message),8000);}};
-        card.createEl('button',{text:t('重新选择图片或网址')}).onclick=()=>new ReplaceImage(this.plugin,this.file,this.text,row).open();
+        card.createEl('button',{text:t('重新选择图片（本地 / 网址 / 库内）')}).onclick=()=>new ReplaceImage(this.plugin,this.file,this.text,row).open();
       }
     });
     const batch=el.createEl('button',{text:t('恢复全部可恢复图片（{0} 张）',recoverable.length)});batch.disabled=!recoverable.length;
@@ -51,21 +51,37 @@ class ReplaceImage extends Modal {
   onOpen() {
     const t=(message,...args)=>this.plugin.t(message,...args);
     this.modalEl.style.width='min(700px,90vw)';this.modalEl.style.minWidth='0';
-    const el=this.contentEl;el.createEl('h2',{text:t('替换当前图片')});
+    const el=this.contentEl;el.empty();el.createEl('h2',{text:t('替换当前图片')});
     el.createEl('p',{text:t('{0}：图片文件名不加时间戳，新图使用 {#fig:时间戳} 标签，换图保留已有标签。替换同名图片，旧内容保存到历史版本，保留图题、标签和宽度。',this.row.filename)});
-    el.createEl('p',{text:t('选择电脑上的新图片，或填写新图片网址。')});
+    el.createEl('p',{text:t('选择电脑上的新图片，填写图片网址，或粘贴库内图片路径（基于库的相对路径 / 绝对路径 / obsidian:// 链接均可）。')});
     const local=el.createEl('input',{type:'file'});local.accept='.png,.jpg,.jpeg,.svg,.gif,.webp,.bmp,.avif,.tif,.tiff';
-    const url=el.createEl('input',{type:'url',placeholder:'https://…'});url.style.width='100%';
-    const status=el.createEl('p');
+    const url=el.createEl('input',{type:'text',placeholder:t('https://… 或库内路径，如 4-成果/…/图.png')});url.style.cssText='width:100%;box-sizing:border-box';
+    const status=el.createEl('p');status.style.cssText='min-height:1.4em;font-size:0.85em;color:var(--text-muted);margin:6px 0';
+    const resolveVault=()=>{const address=url.value.trim();if(!address||/^(?:https?:)?\/\//i.test(address))return null;return this.plugin.parseVaultReference(address,this.file.path);};
+    url.oninput=()=>{
+      const found=resolveVault();
+      if(found)status.textContent=t('✓ 将使用库内图片：{0}',found.path);
+      else if(url.value.trim()&&!/^(?:https?:)?\/\//i.test(url.value.trim()))status.textContent=t('未识别为网址；尚未在库内匹配到该路径');
+      else status.textContent='';
+    };
     const button=el.createEl('button',{text:t('保存新版本并替换引用')});
     button.onclick=async()=>{
       button.disabled=true;
       try {
-        if(local.files?.length && url.value.trim())throw new Error('请选择本地图片或网址其中一种');
+        const address=url.value.trim();
+        if(local.files?.length && address)throw new Error('请选择本地图片或网址其中一种');
         const options={onlyStart:this.row.start,force:true};
         if(this.row.captionSource==='手动图名')options.captionOverrides={[this.row.start]:this.row.title};
         if(local.files?.length){options.data=await local.files[0].arrayBuffer();options.localFilename=local.files[0].name;}
-        else {const address=url.value.trim();if(!/^https?:\/\//i.test(address))throw new Error('请选择图片或填写 http/https 图片网址');options.url=address;}
+        else {
+          const vaultFile=resolveVault();
+          if(vaultFile){
+            if(!/\.(png|jpe?g|gif|webp|svg|bmp|avif|tiff?)$/i.test(vaultFile.path))throw new Error(t('库内文件不是图片：{0}',vaultFile.path));
+            options.data=await this.plugin.app.vault.readBinary(vaultFile);options.localFilename=vaultFile.name;options.vaultPath=vaultFile.path;
+          }
+          else if(/^https?:\/\//i.test(address))options.url=address;
+          else throw new Error('请选择图片、填写图片网址，或粘贴库内图片路径');
+        }
         const log=await this.plugin.collect(this.file,this.original,scan(this.original),options);
         if(log.images.some(x=>x.status==='失败'))throw new Error(log.images.find(x=>x.status==='失败').reason);
         this.close();new Result(this.app,log,this.plugin).open();
@@ -148,14 +164,12 @@ class Preview extends Modal {
       const input=nameLabel.createEl('input',{type:'text',value:row.needsCaptionReview&&row.title==='未命名图片'?'':row.title,placeholder:t(needsName?'例如：实验室平台照片；留空也可继续':'输入新的图名')});input.style.cssText='display:block;width:100%;margin-top:6px;box-sizing:border-box';input.setAttribute('aria-label',t('保存图片的图名'));
       if(needsName){input.style.border='2px solid var(--color-orange, #d97706)';input.style.minHeight='34px';}
       input.onchange=async()=>{this.overrides[row.start]=input.value.trim();this.rows=this.plugin.articleRows(this.text,this.file,this.overrides);this.plan=await Promise.all(this.rows.map(r=>this.plugin.inspect(r,this.file,this.text)));this.onOpen();};
-      if(plan.action==='missing') {
-        body.createEl('button',{text:t('重新选择图片或网址')}).onclick=()=>new ReplaceImage(this.plugin,this.file,this.text,row).open();
-        if(plan.recovery)body.createEl('button',{text:t(plan.recovery.kind==='trash'?'从库内回收站恢复':plan.recovery.kind==='local'?'确认使用找到的库内图片':'从归集记录重新获取')}).onclick=async()=>{
-          try{
-            const log=await this.plugin.recoverImages(this.file,this.text,[row],[plan]);this.close();new Result(this.app,log,this.plugin).open();
-          }catch(e){new Notice(t(e.message),8000);}
-        };
-      }
+      body.createEl('button',{text:t('重新选择图片（本地 / 网址 / 库内）')}).onclick=()=>new ReplaceImage(this.plugin,this.file,this.text,row).open();
+      if(plan.action==='missing'&&plan.recovery)body.createEl('button',{text:t(plan.recovery.kind==='trash'?'从库内回收站恢复':plan.recovery.kind==='local'?'确认使用找到的库内图片':'从归集记录重新获取')}).onclick=async()=>{
+        try{
+          const log=await this.plugin.recoverImages(this.file,this.text,[row],[plan]);this.close();new Result(this.app,log,this.plugin).open();
+        }catch(e){new Notice(t(e.message),8000);}
+      };
       for(const child of body.children)if(child.tagName==='P')child.style.cssText='margin:6px 0;font-size:0.85em;color:var(--text-muted)';
     });this.initialized=true;applyFilter();
     if(!pending.length)el.createEl('p',{text:t('所有图片已归集，当前没有需要更新的图片。')});
@@ -365,6 +379,22 @@ module.exports = class Collector extends Plugin {
     for(const candidate of candidatePaths(src,file.path)){const direct=this.app.vault.getAbstractFileByPath(normalizePath(candidate));if(direct instanceof TFile)return direct;}
     return this.app.metadataCache.getFirstLinkpathDest(decoded,file.path);
   }
+  parseVaultReference(input, sourcePath) {
+    if(!input)return null;
+    let basePath='';
+    try{if(typeof this.app.vault.adapter?.getBasePath==='function')basePath=this.app.vault.adapter.getBasePath();}catch{}
+    for(const candidate of vaultReferenceCandidates(input,basePath)) {
+      for(const path of candidatePaths(candidate,sourcePath||'')) {
+        const direct=this.app.vault.getAbstractFileByPath(normalizePath(path));
+        if(direct instanceof TFile)return direct;
+      }
+    }
+    let plain=String(input).trim().replace(/^!?\[\[/,'').replace(/\]\]$/,'').split('|')[0].trim();
+    try{plain=decodeURIComponent(plain);}catch{}
+    if(/^(https?:|file:|obsidian:)/i.test(plain))return null;
+    const byLink=this.app.metadataCache.getFirstLinkpathDest(plain.replace(/\.[^./]+$/,''),sourcePath||'/');
+    return byLink instanceof TFile?byLink:null;
+  }
   captionKey(text,row,file) {return file.path+'::'+(figureId(text,row)||row.src);}
   articleRows(text,file,overrides={}) {
     const rows=scan(text).map(row=>{const key=this.captionKey(text,row,file),saved=this.settings?.captions?.[key];
@@ -510,7 +540,7 @@ module.exports = class Collector extends Plugin {
           const isWiki = original.slice(row.start-3,row.start) === '![[';
           const update=referenceUpdate(original,row,isWiki?dest:target,used);
           if(update)changed.push(update);
-          report.push({source:row.src,replacementSource:recovery?.origin||recovery?.url||options.url||(options.data!==undefined?'本地选择图片':undefined),localFilename:options.localFilename,destination:dest,savedAt,sha256:digest,...history,status:'成功'});
+          report.push({source:row.src,replacementSource:recovery?.origin||recovery?.url||options.url||options.vaultPath||(options.data!==undefined?'本地选择图片':undefined),localFilename:options.localFilename,destination:dest,savedAt,sha256:digest,...history,status:'成功'});
         } catch(e) { report.push({source:row.src,start:row.start,status:'失败',reason:e.message}); }
       }
       if (await this.app.vault.read(file) !== original) throw new Error('处理期间文章已变化。图片已保存，正文未替换，请重新预览');
@@ -624,3 +654,4 @@ module.exports = class Collector extends Plugin {
     finally { this.running = false; }
   }
 };
+module.exports.pure = {vaultReferenceCandidates, scan, candidatePaths};
