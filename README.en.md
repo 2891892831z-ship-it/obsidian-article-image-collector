@@ -39,6 +39,9 @@ Choose **Check image integrity** in the preview or command palette to see counts
 - Rename managed images when only their numbers or captions change, without rewriting image content.
 - Missing images can be restored from vault trash, downloaded from their recorded URL, or replaced with a chosen file or URL.
 - Any image can switch sources from the preview: local file, remote URL, or an in-vault path (relative / absolute / obsidian:// link).
+- Figure filenames trim their captions to fit the vault path budget; the image folder name length is configurable, and existing long folders can be tidied with the Sync image folder name command.
+- Figure filenames trim their captions to fit the vault path budget; the image folder name length is configurable, and existing long folders can be tidied with the Sync image folder name command.
+- Figure filenames trim their captions to fit the vault path budget; the image folder name length is configurable, and existing long folders can be tidied with the Sync image folder name command.
 - When the article is renamed or moved, its image folder follows automatically; caption and source records migrate to the new path.
 - Save old image versions and the latest article recovery snapshot. Check for later edits before restoring.
 - Built-in Markdown math validation; no PowerShell, Pandoc or external vault script is required.

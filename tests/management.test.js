@@ -239,3 +239,20 @@ test('article rename follows the image folder and migrates caption/source record
   assert.equal(f.plugin.settings.sources['文章/新稿.md'][0].figureId,'a');
   assert(f.notices.some(n=>String(n).includes('图件文件夹已同步')));
 });
+
+test('sync image folder name follows the length limit and guards occupied targets',async()=>{
+  const src='![A](文章/（图件）超长文章名测试稿/图1_A.png){#fig:a}';
+  const f=fixture(src,['文章/（图件）超长文章名测试稿/图1_A.png']);
+  const orig=f.plugin.app.vault.getAbstractFileByPath.bind(f.plugin.app.vault);
+  f.plugin.app.vault.getAbstractFileByPath=p=>orig(p)||{path:p};
+  f.plugin.settings.folderNameLimit=1;
+  await f.plugin.syncFolderName(f.file);
+  assert.equal(f.count.rename,1);
+  assert(f.notices.some(n=>String(n).includes('图件文件夹已同步')));
+  const g=fixture(src,['文章/（图件）超长文章名测试稿/图1_A.png']);
+  const orig2=g.plugin.app.vault.getAbstractFileByPath.bind(g.plugin.app.vault);
+  g.plugin.app.vault.getAbstractFileByPath=p=>orig2(p)||{path:p};
+  await g.plugin.syncFolderName(g.file);
+  assert.equal(g.count.rename,0);
+  assert(g.notices.some(n=>String(n).includes('目标文件夹已存在')));
+});

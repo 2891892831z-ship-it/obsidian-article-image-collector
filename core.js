@@ -16,7 +16,8 @@ function scan(text) {
     if (fence) { if (!fenced) fenced = fence[1]; else if (fence[1][0] === fenced[0] && fence[1].length >= fenced.length) fenced = null; offset += line.length; continue; }
     if (!fenced) {
       const masked = line.replace(/(`+)([^\n]*?)\1/g, s => ' '.repeat(s.length));
-      const re = /!\[\[([^\]\n]+)\]\]|!\[([^\]\n]*)\]\(/g; let m;
+      // 图注允许包含 [@citekey] 和转义括号，不能在第一个 ] 处截断。
+      const re = /!\[\[([^\]\n]+)\]\]|!\[((?:\\.|[^\[\]\r\n]|\[(?:\\.|[^\[\]\r\n])*\])*)\]\(/g; let m;
       while ((m = re.exec(masked))) {
         if (m.index && line[m.index-1] === '\\') continue;
         if (m[1]) {
@@ -128,6 +129,16 @@ function vaultReferenceCandidates(input, basePath) {
     }
   }
   return [...new Set(results.filter(Boolean))];
+}
+function fitFigureName(base, budget) {
+  // 预算 = 文件名主干允许长度；超预算时保住「图N_」前缀，图题从尾部截短
+  if (budget <= 0 || base.length <= budget) return base;
+  const prefix = (/^图[^_]*_/.exec(base) || [''])[0];
+  const keep = Math.max(budget - prefix.length, 4);
+  let caption = base.slice(prefix.length);
+  caption = caption.slice(0, keep).replace(/[（(][^（）()]*$/, '').replace(/[.\s_\-]+$/, '').trim();
+  if (!caption) caption = base.slice(prefix.length, prefix.length + keep);
+  return prefix + caption;
 }
 function imageType(buffer) {
   const b = new Uint8Array(buffer), ascii = (a,z) => String.fromCharCode(...b.slice(a,z));
@@ -271,4 +282,4 @@ function validateMarkdownMath(text) {
   if(math)issue(mathLine,'MATH002','行间数学块未闭合');
   return issues;
 }
-module.exports = {scan, safeName, imageType, replaceSources, referenceUpdate, stamp, numberFigures, imageAtCursor, matchesImageStem, stripReferenceStamp, validateMarkdownMath, figureId, referencePath, candidatePaths, canonicalizeLinks, vaultReferenceCandidates};
+module.exports = {scan, safeName, imageType, replaceSources, referenceUpdate, stamp, numberFigures, imageAtCursor, matchesImageStem, stripReferenceStamp, validateMarkdownMath, figureId, referencePath, candidatePaths, canonicalizeLinks, vaultReferenceCandidates, fitFigureName};

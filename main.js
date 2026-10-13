@@ -1,6 +1,6 @@
 'use strict';
 const {Plugin, Modal, Notice, TFile, normalizePath, requestUrl, getLanguage, PluginSettingTab} = require('obsidian');
-const {scan, safeName, imageType, replaceSources, stamp, numberFigures, imageAtCursor, matchesImageStem, stripReferenceStamp, referenceUpdate, validateMarkdownMath, figureId, referencePath, candidatePaths, canonicalizeLinks, vaultReferenceCandidates} = require('./core');
+const {scan, safeName, imageType, replaceSources, stamp, numberFigures, imageAtCursor, matchesImageStem, stripReferenceStamp, referenceUpdate, validateMarkdownMath, figureId, referencePath, candidatePaths, canonicalizeLinks, vaultReferenceCandidates, fitFigureName} = require('./core');
 const {translate,resolveLanguage}=require('./i18n');
 const crypto = require('crypto');
 function now() { const d = new Date(), p = n => String(n).padStart(2,'0'); return `${d.getFullYear()}.${p(d.getMonth()+1)}.${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`; }
@@ -194,7 +194,16 @@ class Result extends Modal {
   onClose() { this.contentEl.empty(); }
 }
 class LanguageSettings extends PluginSettingTab {
-  display() {const el=this.containerEl;el.empty();this.plugin.languageControl(el,()=>this.display());el.createEl('p',{text:this.plugin.t('只切换插件界面语言，不修改文章、图名或现有文件路径。')});}
+  display() {
+    const el=this.containerEl,p=this.plugin;el.empty();p.languageControl(el,()=>this.display());
+    const row=el.createEl('div');row.style.cssText='display:flex;align-items:center;gap:8px;margin:4px 0 12px';
+    row.createEl('label',{text:p.t('图件文件夹名限长：')});
+    const input=row.createEl('input',{type:'text'});input.value=String(p.settings?.folderNameLimit??0);
+    input.style.width='5em';input.setAttribute('aria-label',p.t('图件文件夹名限长'));
+    input.onchange=async()=>{const n=parseInt(input.value,10);if(!Number.isFinite(n)||n<0){input.value=String(p.settings?.folderNameLimit??0);return;}p.settings.folderNameLimit=n;try{await p.saveData(p.settings);}catch(e){new Notice(p.t(e.message),8000);}};
+    el.createEl('p',{text:p.t('0 = 不限制。超过时限长文章名部分；对已有长文件夹，改设置后运行「同步图件文件夹名」生效。')});
+    el.createEl('p',{text:p.t('只切换插件界面语言，不修改文章、图名或现有文件路径。')});
+  }
 }
 module.exports = class Collector extends Plugin {
   language() {
@@ -220,22 +229,46 @@ module.exports = class Collector extends Plugin {
     this.addCommand({id:'restore-current-article-images',name:'恢复最近一次归集前的文章 / Restore article before last collection',callback:() => this.restore(this.app.workspace.getActiveFile())});
     this.addCommand({id:'replace-current-image',name:'替换光标所在图片（保留图题和编号） / Replace image at cursor (keep caption and number)',editorCallback:(editor,view)=>this.replaceAtEditor(editor,view.file)});
     this.addCommand({id:'check-article-images',name:'检查图片完整性 / Check image integrity',callback:()=>this.checkIntegrity(this.app.workspace.getActiveFile())});
+    this.addCommand({id:'sync-image-folder-name',name:'同步图件文件夹名（限长/改名后整理） / Sync image folder name',callback:()=>this.syncFolderName(this.app.workspace.getActiveFile())});
     this.registerEvent(this.app.workspace.on('editor-menu',(menu,editor,view)=>{
       if(imageAtCursor(editor.getValue(),editor.posToOffset(editor.getCursor())))menu.addItem(item=>item.setTitle(this.t('替换当前图片（保留图题和编号）')).setIcon('image').onClick(()=>this.replaceAtEditor(editor,view.file)));
     }));
     this.registerEvent(this.app.workspace.on('file-menu',(menu,file) => { if (file instanceof TFile && file.extension === 'md') menu.addItem(item => item.setTitle(this.t('归集当前文章图片')).setIcon('image').onClick(() => this.preview(file))); }));
     this.registerEvent(this.app.vault.on('rename',(file,oldPath) => this.onArticleRenamed(file,oldPath)));
   }
-  folder(file) { return normalizePath(`${file.parent.path === '/' ? '' : file.parent.path + '/'}（图件）${file.basename}`); }
+  folderNameLimit() { const n = parseInt(this.settings?.folderNameLimit, 10); return Number.isFinite(n) && n > 0 ? n : 0; }
+  folderFor(parentPath, basename) {
+    const parent = parentPath && parentPath !== '/' ? parentPath + '/' : '';
+    let name = basename || '';
+    const limit = this.folderNameLimit();
+    if (limit > 0 && name.length > limit) name = name.slice(0, limit);
+    return normalizePath(`${parent}（图件）${name}`);
+  }
+  folder(file) { return this.folderFor(file.parent && file.parent.path, file.basename); }
+  vaultBasePath() { try { return (this.app.vault.adapter.getBasePath ? this.app.vault.adapter.getBasePath() : '').replace(/\\/g, '/'); } catch { return ''; } }
+  fitFigureBase(folder, base, ext) {
+    const budget = 250 - this.vaultBasePath().length - folder.length - 1 - ext.length - 1;
+    if (budget <= 4) throw new Error(this.t('路径过长：库位置或图件文件夹过深，无法安全保存：{0}', folder));
+    return fitFigureName(base, budget);
+  }
+  fitDestination(folder, filename, ext) {
+    // 预览/改名计划场景：预算不足时仍返回未截短名称，仅实际写入（fitFigureBase）会抛错
+    try { return folder + '/' + this.fitFigureBase(folder, filename, ext) + '.' + ext; }
+    catch { return folder + '/' + filename + '.' + ext; }
+  }
   async onArticleRenamed(file, oldPath) {
     try {
       if (this.running) return;
       if (!(file instanceof TFile) || file.extension !== 'md') return;
       const dirOf = p => (p.includes('/') ? p.slice(0, p.lastIndexOf('/')) : '');
       const baseOf = p => p.slice(p.lastIndexOf('/') + 1).replace(/\.md$/i, '');
-      const oldFolder = normalizePath(`${dirOf(oldPath) ? dirOf(oldPath) + '/' : ''}（图件）${baseOf(oldPath)}`);
+      // 旧文件夹可能建于“限长”设置开启之前：限长与全名两种形式都尝试
       const newFolder = this.folder(file);
-      if (oldFolder === newFolder) return;
+      const oldCandidates = [...new Set([
+        this.folderFor(dirOf(oldPath), baseOf(oldPath)),
+        normalizePath(`${dirOf(oldPath) ? dirOf(oldPath) + '/' : ''}（图件）${baseOf(oldPath)}`),
+      ])].filter(f => f !== newFolder);
+      if (!oldCandidates.length) return;
       // 文章路径已变：先迁移 data.json 中的图名与来源记录键
       let migrated = false;
       if (this.settings && this.saveData) {
@@ -248,7 +281,9 @@ module.exports = class Collector extends Plugin {
         }
         if (migrated) await this.saveData(s);
       }
-      if (!(await this.app.vault.adapter.exists(oldFolder))) return;
+      let oldFolder = null;
+      for (const f of oldCandidates) if (await this.app.vault.adapter.exists(f)) { oldFolder = f; break; }
+      if (!oldFolder) return;
       if (await this.app.vault.adapter.exists(newFolder)) {
         new Notice(this.t('文章已重命名，但新图件文件夹已存在，旧文件夹保留：{0}', oldFolder), 8000);
         return;
@@ -257,6 +292,35 @@ module.exports = class Collector extends Plugin {
       if (!target) return;
       await this.app.fileManager.renameFile(target, newFolder);
       new Notice(this.t('文章已重命名，图件文件夹已同步：{0} → {1}', oldFolder.split('/').pop(), newFolder.split('/').pop()), 6000);
+    } catch (e) {
+      new Notice(this.t('文章改名后同步图件文件夹失败：{0}', e && e.message ? e.message : e), 8000);
+    }
+  }
+  async syncFolderName(file) {
+    try {
+      if (this.running) return new Notice(this.t('归集正在运行，请完成后再操作'));
+      if (!(file instanceof TFile) || file.extension !== 'md') return new Notice(this.t('请先打开 Markdown 文章'));
+      const text = await this.app.vault.read(file);
+      const target = this.folder(file);
+      // 从正文图片引用推断“实际所在”的图件文件夹（取众数，仅认（图件）前缀）
+      const counts = new Map();
+      for (const row of scan(text)) {
+        if (/^https?:\/\//i.test(row.src)) continue;
+        const local = this.resolve(row.src, file);
+        if (!(local instanceof TFile)) continue;
+        const parent = local.path.slice(0, local.path.lastIndexOf('/'));
+        if (!parent || !(parent.split('/').pop() || '').startsWith('（图件）')) continue;
+        counts.set(parent, (counts.get(parent) || 0) + 1);
+      }
+      const ranked = [...counts.entries()].sort((a, b) => b[1] - a[1]);
+      const current = ranked.length ? ranked[0][0] : null;
+      if (!current) return new Notice(this.t('未在文章中找到已归集的图件文件夹'));
+      if (current === target) return new Notice(this.t('图件文件夹已是目标名称，无需同步：{0}', target));
+      if (await this.app.vault.adapter.exists(target)) return new Notice(this.t('目标文件夹已存在，未同步：{0}', target));
+      const folderFile = this.app.vault.getAbstractFileByPath(current);
+      if (!folderFile) return new Notice(this.t('未在文章中找到已归集的图件文件夹'));
+      await this.app.fileManager.renameFile(folderFile, target);
+      new Notice(this.t('图件文件夹已同步：{0} → {1}', current.split('/').pop(), target.split('/').pop()), 6000);
     } catch (e) {
       new Notice(this.t('文章改名后同步图件文件夹失败：{0}', e && e.message ? e.message : e), 8000);
     }
@@ -493,7 +557,7 @@ module.exports = class Collector extends Plugin {
       if(!recovery&&matches.length===1)return {action:'missing',reason:'原路径无效；发现同名库内图片，请确认后使用：'+matches[0].path,recovery:{kind:'local',path:matches[0].path}};
       return {action:'missing',reason:recovery?.kind==='trash'?'图片已移入库内回收站，可恢复':recovery?.kind==='source'?'本地图片已缺失，可按原网络来源重新获取':'本地图片缺失或路径无效；可重新选择来源'+(row.src.startsWith('.')?'（已尝试按文章目录解析相对路径）':''),recovery};
     }
-    const destination=folder+'/'+row.filename+'.'+local.extension;
+    const destination=this.fitDestination(folder,row.filename,local.extension);
     if(local.path.slice(0,local.path.lastIndexOf('/'))===folder){
       const stem=local.basename,matching=matchesImageStem(stem,row.filename);
       if(matching)return {action:referenceUpdate(text,row,undefined,new Set())?'metadata':'skip',local,destination:local.path,reason:'图片已归集；'+(referenceUpdate(text,row,undefined,new Set())?'仅更新引用标签':'无需处理')};
@@ -557,7 +621,7 @@ module.exports = class Collector extends Plugin {
           const ext = imageType(data), digest = hash(data), base = row.filename||safeName(row.title);
           await this.mkdir(folder);
           const savedAt=versionTime();
-          const dest = normalizePath(`${folder}/${base}.${ext}`);
+          const dest = normalizePath(`${folder}/${this.fitFigureBase(folder,base,ext)}.${ext}`);
           if(renames.some(r=>r.from===dest||r.to===dest))throw new Error('目标与其他图片的改名操作冲突，请分批处理');
           let history;
           if(await this.app.vault.adapter.exists(dest)) {
@@ -689,4 +753,4 @@ module.exports = class Collector extends Plugin {
     finally { this.running = false; }
   }
 };
-module.exports.pure = {vaultReferenceCandidates, scan, candidatePaths};
+module.exports.pure = {vaultReferenceCandidates, scan, candidatePaths, fitFigureName};

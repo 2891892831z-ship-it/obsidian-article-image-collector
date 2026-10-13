@@ -182,6 +182,17 @@ Object.assign(messages,{
   "库内文件不是图片：{0}":"The vault file is not an image: {0}"
 });
 Object.assign(messages,{
+  "同步图件文件夹名（限长/改名后整理）":"Sync image folder name",
+  "归集正在运行，请完成后再操作":"A collection task is running. Wait for it to finish.",
+  "未在文章中找到已归集的图件文件夹":"No collected image folder was found in the article",
+  "图件文件夹已是目标名称，无需同步：{0}":"The image folder already has the target name: {0}",
+  "目标文件夹已存在，未同步：{0}":"The target folder already exists; not synced: {0}",
+  "图件文件夹已同步：{0} → {1}":"Image folder synced: {0} → {1}",
+  "路径过长：库位置或图件文件夹过深，无法安全保存：{0}":"Path too long: the vault location or image folder is too deep to save safely: {0}",
+  "图件文件夹名限长：":"Image folder name length limit: ",
+  "0 = 不限制。超过时限长文章名部分；对已有长文件夹，改设置后运行「同步图件文件夹名」生效。":"0 = no limit. Longer article names are truncated; for existing long folders, run Sync image folder name after changing this setting."
+});
+Object.assign(messages,{
   "文章已重命名，图件文件夹已同步：{0} → {1}":"Article renamed; the image folder followed: {0} → {1}",
   "文章已重命名，但新图件文件夹已存在，旧文件夹保留：{0}":"Article renamed, but the target image folder already exists. The old folder was kept: {0}",
   "文章改名后同步图件文件夹失败：{0}":"Failed to move the image folder with the renamed article: {0}"
